@@ -2,10 +2,6 @@ package provider
 
 import (
 	"context"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
 	"crypto/sha256"
 	"fmt"
 
@@ -17,14 +13,19 @@ import (
 var _ datasource.DataSource = &certRequestDataSource{}
 
 type certRequestModel struct {
-	// Inputs
-	CertPEM       types.String `tfsdk:"cert_pem"`
-	PrivateKeyPEM types.String `tfsdk:"private_key_pem"`
+	// Input
+	CertRequestPEM types.String `tfsdk:"cert_request_pem"`
 
 	// Outputs
-	CertRequestPEM types.String `tfsdk:"cert_request_pem"`
-	KeyAlgorithm   types.String `tfsdk:"key_algorithm"`
-	ID             types.String `tfsdk:"id"`
+	SubjectCommonName  types.String `tfsdk:"subject_common_name"`
+	SubjectOrganization types.List   `tfsdk:"subject_organization"`
+	SubjectCountry     types.List   `tfsdk:"subject_country"`
+	DNSNames           types.List   `tfsdk:"dns_names"`
+	IPAddresses        types.List   `tfsdk:"ip_addresses"`
+	URIs               types.List   `tfsdk:"uris"`
+	KeyAlgorithm       types.String `tfsdk:"key_algorithm"`
+	SignatureAlgorithm types.String `tfsdk:"signature_algorithm"`
+	ID                 types.String `tfsdk:"id"`
 }
 
 type certRequestDataSource struct{}
@@ -39,28 +40,52 @@ func (d *certRequestDataSource) Metadata(_ context.Context, req datasource.Metad
 
 func (d *certRequestDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Generates a Certificate Signing Request (CSR) by copying Subject and SANs from an existing certificate.",
+		Description: "Parses a PEM-encoded Certificate Signing Request (CSR) and exposes its subject, SANs, and key details.",
 		Attributes: map[string]schema.Attribute{
-			"cert_pem": schema.StringAttribute{
-				Description: "PEM-encoded certificate to copy Subject and SANs from.",
+			"cert_request_pem": schema.StringAttribute{
+				Description: "PEM-encoded Certificate Signing Request to inspect.",
 				Required:    true,
 			},
-			"private_key_pem": schema.StringAttribute{
-				Description: "PEM-encoded private key for signing the CSR. If omitted, an EC P-256 key is auto-generated (changes every apply).",
-				Optional:    true,
+			"subject_common_name": schema.StringAttribute{
+				Description: "Common Name (CN) from the CSR subject.",
 				Computed:    true,
-				Sensitive:   true,
 			},
-			"cert_request_pem": schema.StringAttribute{
-				Description: "PEM-encoded Certificate Signing Request.",
+			"subject_organization": schema.ListAttribute{
+				Description: "Organization (O) values from the CSR subject.",
 				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"subject_country": schema.ListAttribute{
+				Description: "Country (C) values from the CSR subject.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"dns_names": schema.ListAttribute{
+				Description: "DNS Subject Alternative Names from the CSR.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"ip_addresses": schema.ListAttribute{
+				Description: "IP address Subject Alternative Names from the CSR.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"uris": schema.ListAttribute{
+				Description: "URI Subject Alternative Names from the CSR.",
+				Computed:    true,
+				ElementType: types.StringType,
 			},
 			"key_algorithm": schema.StringAttribute{
-				Description: "Algorithm of the private key used: ECDSA, RSA, or Ed25519.",
+				Description: "Algorithm of the public key: ECDSA, RSA, or Ed25519.",
+				Computed:    true,
+			},
+			"signature_algorithm": schema.StringAttribute{
+				Description: "Signature algorithm used to sign the CSR.",
 				Computed:    true,
 			},
 			"id": schema.StringAttribute{
-				Computed: true,
+				Description: "Computed identifier derived from the CSR.",
+				Computed:    true,
 			},
 		},
 	}
@@ -73,66 +98,60 @@ func (d *certRequestDataSource) Read(ctx context.Context, req datasource.ReadReq
 		return
 	}
 
-	// Parse leaf certificate
-	leaf, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
+	// Parse CSR
+	csr, err := ParsePEMCertificateRequest([]byte(data.CertRequestPEM.ValueString()))
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Certificate", err.Error())
+		resp.Diagnostics.AddError("Invalid Certificate Request", err.Error())
 		return
 	}
 
-	// Parse or auto-generate private key
-	var parsedKey crypto.PrivateKey
-	if !data.PrivateKeyPEM.IsNull() && data.PrivateKeyPEM.ValueString() != "" {
-		var err error
-		parsedKey, err = ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
-		if err != nil {
-			resp.Diagnostics.AddError("Invalid Private Key", err.Error())
-			return
-		}
-	}
-
-	// Generate CSR (nil key => auto-generate EC P-256)
-	csrPEM, keyPEM, err := GenerateCSR(leaf, parsedKey)
-	if err != nil {
-		resp.Diagnostics.AddError("CSR Generation Failed", err.Error())
+	// Verify signature
+	if err := csr.CheckSignature(); err != nil {
+		resp.Diagnostics.AddError("CSR Signature Verification Failed", err.Error())
 		return
 	}
 
-	data.CertRequestPEM = types.StringValue(csrPEM)
+	// Subject fields
+	data.SubjectCommonName = types.StringValue(csr.Subject.CommonName)
 
-	// Set private_key_pem: passthrough if provided, auto-generated if not
-	if keyPEM != "" {
-		// Auto-generated
-		data.PrivateKeyPEM = types.StringValue(keyPEM)
+	orgValues := make([]types.String, len(csr.Subject.Organization))
+	for i, o := range csr.Subject.Organization {
+		orgValues[i] = types.StringValue(o)
 	}
-	// If user provided the key, it stays as-is from config
+	data.SubjectOrganization, _ = types.ListValueFrom(ctx, types.StringType, orgValues)
 
-	// Determine key algorithm
-	var signerKey crypto.PrivateKey
-	if parsedKey != nil {
-		signerKey = parsedKey
-	} else {
-		// Parse the auto-generated key to determine type
-		signerKey, _ = ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
+	countryValues := make([]types.String, len(csr.Subject.Country))
+	for i, c := range csr.Subject.Country {
+		countryValues[i] = types.StringValue(c)
 	}
-	data.KeyAlgorithm = types.StringValue(keyAlgorithmName(signerKey))
+	data.SubjectCountry, _ = types.ListValueFrom(ctx, types.StringType, countryValues)
 
-	// ID from leaf cert hash
-	idHash := sha256.Sum256(leaf.Raw)
+	// SAN fields
+	dnsValues := make([]types.String, len(csr.DNSNames))
+	for i, d := range csr.DNSNames {
+		dnsValues[i] = types.StringValue(d)
+	}
+	data.DNSNames, _ = types.ListValueFrom(ctx, types.StringType, dnsValues)
+
+	ipValues := make([]types.String, len(csr.IPAddresses))
+	for i, ip := range csr.IPAddresses {
+		ipValues[i] = types.StringValue(ip.String())
+	}
+	data.IPAddresses, _ = types.ListValueFrom(ctx, types.StringType, ipValues)
+
+	uriValues := make([]types.String, len(csr.URIs))
+	for i, u := range csr.URIs {
+		uriValues[i] = types.StringValue(u.String())
+	}
+	data.URIs, _ = types.ListValueFrom(ctx, types.StringType, uriValues)
+
+	// Key and signature info
+	data.KeyAlgorithm = types.StringValue(PublicKeyAlgorithmName(csr.PublicKey))
+	data.SignatureAlgorithm = types.StringValue(csr.SignatureAlgorithm.String())
+
+	// ID from CSR raw bytes hash
+	idHash := sha256.Sum256(csr.Raw)
 	data.ID = types.StringValue(fmt.Sprintf("%x", idHash[:8]))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func keyAlgorithmName(key crypto.PrivateKey) string {
-	switch key.(type) {
-	case *ecdsa.PrivateKey:
-		return "ECDSA"
-	case *rsa.PrivateKey:
-		return "RSA"
-	case ed25519.PrivateKey:
-		return "Ed25519"
-	default:
-		return "unknown"
-	}
 }

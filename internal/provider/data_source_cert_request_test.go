@@ -2,11 +2,6 @@ package provider
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/rsa"
 	"fmt"
 	"slices"
 	"testing"
@@ -31,18 +26,22 @@ func TestCertRequestDataSource(t *testing.T) {
 		t.Fatal(schemaResp.Diagnostics)
 	}
 
-	required := []string{"cert_pem"}
-	optionalComputed := []string{"private_key_pem"}
-	computed := []string{"cert_request_pem", "key_algorithm", "id"}
-	for _, attr := range slices.Concat(required, optionalComputed, computed) {
+	required := []string{"cert_request_pem"}
+	computed := []string{
+		"subject_common_name", "subject_organization", "subject_country",
+		"dns_names", "ip_addresses", "uris",
+		"key_algorithm", "signature_algorithm", "id",
+	}
+	for _, attr := range slices.Concat(required, computed) {
 		if _, ok := schemaResp.Schema.Attributes[attr]; !ok {
 			t.Errorf("missing attribute %q", attr)
 		}
 	}
 }
 
-// TestAccCertRequestDataSource_withKey tests CSR generation with a provided private key.
-func TestAccCertRequestDataSource_withKey(t *testing.T) {
+// TestAccCertRequestDataSource_roundTrip generates a CSR with the resource,
+// then inspects it with the data source and verifies all parsed fields.
+func TestAccCertRequestDataSource_roundTrip(t *testing.T) {
 	caPEM, intermediatePEM, leafPEM, leafKeyPEM := generateTestPKIWithKey(t)
 
 	config := fmt.Sprintf(`
@@ -63,10 +62,14 @@ data "certkit_certificate" "test" {
   ]
 }
 
-data "certkit_cert_request" "test" {
+resource "certkit_cert_request" "test" {
   cert_pem        = data.certkit_certificate.test.cert_pem
   private_key_pem = <<-EOT
 %sEOT
+}
+
+data "certkit_cert_request" "inspect" {
+  cert_request_pem = certkit_cert_request.test.cert_request_pem
 }
 `, leafPEM, intermediatePEM, caPEM, leafKeyPEM)
 
@@ -75,76 +78,56 @@ data "certkit_cert_request" "test" {
 		Steps: []resource.TestStep{{
 			Config: config,
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttrSet("data.certkit_cert_request.test", "cert_request_pem"),
-				resource.TestCheckResourceAttrSet("data.certkit_cert_request.test", "private_key_pem"),
-				resource.TestCheckResourceAttr("data.certkit_cert_request.test", "key_algorithm", "ECDSA"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_common_name", "test.example.com"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "key_algorithm", "ECDSA"),
+				resource.TestCheckResourceAttrSet("data.certkit_cert_request.inspect", "signature_algorithm"),
+				resource.TestCheckResourceAttrSet("data.certkit_cert_request.inspect", "id"),
 			),
 		}},
 	})
 }
 
-// TestAccCertRequestDataSource_autoGen tests CSR generation with auto-generated key.
-func TestAccCertRequestDataSource_autoGen(t *testing.T) {
-	caPEM, intermediatePEM, leafPEM := generateTestPKI(t)
+// TestAccCertRequestDataSource_withSANs generates a CSR from a cert with full SANs
+// and verifies the data source parses all SAN types.
+func TestAccCertRequestDataSource_withSANs(t *testing.T) {
+	leaf, key := generateLeafWithSANs(t)
+
+	csrPEM, _, err := GenerateCSR(leaf, key)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := fmt.Sprintf(`
 provider "certkit" {}
 
-data "certkit_certificate" "test" {
-  leaf_pem = <<-EOT
+data "certkit_cert_request" "inspect" {
+  cert_request_pem = <<-EOT
 %sEOT
-
-  extra_intermediates_pem = [<<-EOT
-%sEOT
-  ]
-
-  fetch_aia   = false
-  trust_store = "custom"
-  custom_roots_pem = [<<-EOT
-%sEOT
-  ]
 }
-
-data "certkit_cert_request" "test" {
-  cert_pem = data.certkit_certificate.test.cert_pem
-}
-`, leafPEM, intermediatePEM, caPEM)
+`, csrPEM)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{{
 			Config: config,
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttrSet("data.certkit_cert_request.test", "cert_request_pem"),
-				resource.TestCheckResourceAttrSet("data.certkit_cert_request.test", "private_key_pem"),
-				resource.TestCheckResourceAttr("data.certkit_cert_request.test", "key_algorithm", "ECDSA"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_common_name", "test.example.com"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_organization.#", "1"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_organization.0", "Test Org"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_country.#", "1"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "subject_country.0", "US"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "dns_names.#", "2"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "dns_names.0", "test.example.com"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "dns_names.1", "www.test.example.com"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "ip_addresses.#", "2"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "ip_addresses.0", "10.0.0.1"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "ip_addresses.1", "::1"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "uris.#", "1"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "uris.0", "spiffe://example.com/workload"),
+				resource.TestCheckResourceAttr("data.certkit_cert_request.inspect", "key_algorithm", "ECDSA"),
+				resource.TestCheckResourceAttrSet("data.certkit_cert_request.inspect", "signature_algorithm"),
+				resource.TestCheckResourceAttrSet("data.certkit_cert_request.inspect", "id"),
 			),
 		}},
 	})
-}
-
-func TestKeyAlgorithmName(t *testing.T) {
-	ecKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
-	_, edKey, _ := ed25519.GenerateKey(rand.Reader)
-
-	tests := []struct {
-		name     string
-		key      interface{}
-		expected string
-	}{
-		{"ECDSA", ecKey, "ECDSA"},
-		{"RSA", rsaKey, "RSA"},
-		{"Ed25519", edKey, "Ed25519"},
-		{"nil", nil, "unknown"},
-		{"unsupported", struct{}{}, "unknown"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := keyAlgorithmName(tt.key)
-			if got != tt.expected {
-				t.Errorf("keyAlgorithmName(%T) = %q, want %q", tt.key, got, tt.expected)
-			}
-		})
-	}
 }

@@ -2,6 +2,7 @@ package provider
 
 import (
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
@@ -1101,6 +1102,109 @@ func TestGenerateCSR_nonSignerKey(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "does not implement crypto.Signer") {
 		t.Errorf("error should mention crypto.Signer, got: %v", err)
+	}
+}
+
+func TestKeyAlgorithmName(t *testing.T) {
+	ecKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	_, edKey, _ := ed25519.GenerateKey(rand.Reader)
+
+	tests := []struct {
+		name     string
+		key      interface{}
+		expected string
+	}{
+		{"ECDSA", ecKey, "ECDSA"},
+		{"RSA", rsaKey, "RSA"},
+		{"Ed25519", edKey, "Ed25519"},
+		{"nil", nil, "unknown"},
+		{"unsupported", struct{}{}, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := KeyAlgorithmName(tt.key)
+			if got != tt.expected {
+				t.Errorf("KeyAlgorithmName(%T) = %q, want %q", tt.key, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPublicKeyAlgorithmName(t *testing.T) {
+	ecKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	rsaKey, _ := rsa.GenerateKey(rand.Reader, 2048)
+	edPub, _, _ := ed25519.GenerateKey(rand.Reader)
+
+	tests := []struct {
+		name     string
+		key      interface{}
+		expected string
+	}{
+		{"ECDSA", &ecKey.PublicKey, "ECDSA"},
+		{"RSA", &rsaKey.PublicKey, "RSA"},
+		{"Ed25519", edPub, "Ed25519"},
+		{"nil", nil, "unknown"},
+		{"unsupported", struct{}{}, "unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PublicKeyAlgorithmName(tt.key)
+			if got != tt.expected {
+				t.Errorf("PublicKeyAlgorithmName(%T) = %q, want %q", tt.key, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestParsePEMCertificateRequest(t *testing.T) {
+	leaf, key := generateLeafWithSANs(t)
+	csrPEM, _, err := GenerateCSR(leaf, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	csr, err := ParsePEMCertificateRequest([]byte(csrPEM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if csr.Subject.CommonName != "test.example.com" {
+		t.Errorf("CN=%q, want test.example.com", csr.Subject.CommonName)
+	}
+	if len(csr.DNSNames) != 2 {
+		t.Errorf("DNSNames count=%d, want 2", len(csr.DNSNames))
+	}
+}
+
+func TestParsePEMCertificateRequest_invalidPEM(t *testing.T) {
+	_, err := ParsePEMCertificateRequest([]byte("not valid PEM"))
+	if err == nil {
+		t.Error("expected error for invalid PEM")
+	}
+	if !strings.Contains(err.Error(), "no PEM block found") {
+		t.Errorf("error should mention no PEM block, got: %v", err)
+	}
+}
+
+func TestParsePEMCertificateRequest_wrongBlockType(t *testing.T) {
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("whatever")})
+	_, err := ParsePEMCertificateRequest(pemData)
+	if err == nil {
+		t.Error("expected error for wrong block type")
+	}
+	if !strings.Contains(err.Error(), "expected CERTIFICATE REQUEST") {
+		t.Errorf("error should mention expected block type, got: %v", err)
+	}
+}
+
+func TestParsePEMCertificateRequest_invalidDER(t *testing.T) {
+	pemData := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: []byte("garbage")})
+	_, err := ParsePEMCertificateRequest(pemData)
+	if err == nil {
+		t.Error("expected error for invalid DER")
+	}
+	if !strings.Contains(err.Error(), "parsing certificate request") {
+		t.Errorf("error should mention parsing, got: %v", err)
 	}
 }
 

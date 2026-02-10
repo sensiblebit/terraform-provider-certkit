@@ -443,6 +443,50 @@ func GenerateCSR(leaf *x509.Certificate, privateKey crypto.PrivateKey) (csrPEM s
 	return csrPEM, keyPEM, nil
 }
 
+// KeyAlgorithmName returns a human-readable name for a private key's algorithm.
+func KeyAlgorithmName(key crypto.PrivateKey) string {
+	switch key.(type) {
+	case *ecdsa.PrivateKey:
+		return "ECDSA"
+	case *rsa.PrivateKey:
+		return "RSA"
+	case ed25519.PrivateKey:
+		return "Ed25519"
+	default:
+		return "unknown"
+	}
+}
+
+// PublicKeyAlgorithmName returns a human-readable name for a public key's algorithm.
+func PublicKeyAlgorithmName(key crypto.PublicKey) string {
+	switch key.(type) {
+	case *ecdsa.PublicKey:
+		return "ECDSA"
+	case *rsa.PublicKey:
+		return "RSA"
+	case ed25519.PublicKey:
+		return "Ed25519"
+	default:
+		return "unknown"
+	}
+}
+
+// ParsePEMCertificateRequest parses a single certificate request from PEM data.
+func ParsePEMCertificateRequest(pemData []byte) (*x509.CertificateRequest, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found in certificate request data")
+	}
+	if block.Type != "CERTIFICATE REQUEST" {
+		return nil, fmt.Errorf("expected CERTIFICATE REQUEST PEM block, got %q", block.Type)
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parsing certificate request: %w", err)
+	}
+	return csr, nil
+}
+
 // colonHex formats a byte slice as colon-separated uppercase hex.
 func colonHex(b []byte) string {
 	h := hex.EncodeToString(b)

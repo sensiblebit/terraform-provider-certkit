@@ -30,17 +30,24 @@ output "fullchain" {
 
 - **Chain resolution** -- fetch leaf certs via TLS or provide PEM, resolve intermediates via AIA, verify against system/Mozilla/custom trust stores
 - **Fingerprints and identifiers** -- SHA-256 fingerprints, computed SKID (RFC 7093), embedded SKID/AKID for every certificate in the chain
-- **CSR generation** -- generate a Certificate Signing Request from an existing certificate's Subject and SANs, with optional private key
+- **CSR generation** -- generate a Certificate Signing Request from an existing certificate's Subject and SANs, with private key stored in state
+- **CSR inspection** -- parse an existing CSR to extract subject, SANs, key algorithm, and signature algorithm
 - **PKCS#12 encoding** -- bundle leaf + chain + private key into a PFX file (base64-encoded)
 - **PKCS#7 encoding** -- bundle certificates into a certs-only P7B file (base64-encoded)
 - **No external dependencies** -- pure Go, no OpenSSL or shell commands
+
+## Resources
+
+| Resource | Description |
+|---|---|
+| `certkit_cert_request` | Generate a CSR from a certificate (stores key in state) |
 
 ## Data Sources
 
 | Data Source | Description |
 |---|---|
 | `certkit_certificate` | Resolve and verify a certificate chain |
-| `certkit_cert_request` | Generate a CSR from a certificate |
+| `certkit_cert_request` | Parse and inspect a CSR |
 | `certkit_pkcs12` | Encode a PKCS#12/PFX bundle |
 | `certkit_pkcs7` | Encode a PKCS#7/P7B bundle |
 
@@ -80,16 +87,16 @@ Resolves a certificate chain from a leaf certificate (fetched via TLS or provide
 | `roots` | List(Object) | Root certificates with same attributes as intermediates |
 | `warnings` | List(String) | Non-fatal warnings (e.g., AIA fetch failures) |
 
-## Data Source: certkit_cert_request
+## Resource: certkit_cert_request
 
-Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, URI) from an existing certificate.
+Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, URI) from an existing certificate. The private key is stored in Terraform state.
 
 ### Arguments
 
 | Name | Type | Required | Description |
 |---|---|---|---|
-| `cert_pem` | String | Yes | PEM-encoded certificate to copy Subject and SANs from |
-| `private_key_pem` | String | No | PEM-encoded private key for signing. If omitted, an EC P-256 key is auto-generated |
+| `cert_pem` | String | Yes | PEM-encoded certificate to copy Subject and SANs from. Changing forces replacement. |
+| `private_key_pem` | String | No | PEM-encoded private key for signing. If omitted, an EC P-256 key is auto-generated. Changing forces replacement. |
 
 ### Attributes
 
@@ -98,6 +105,29 @@ Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, UR
 | `cert_request_pem` | String | PEM-encoded CSR |
 | `private_key_pem` | String, Sensitive | Private key used (provided or auto-generated) |
 | `key_algorithm` | String | Algorithm: `ECDSA`, `RSA`, or `Ed25519` |
+
+## Data Source: certkit_cert_request
+
+Parses a PEM-encoded Certificate Signing Request and exposes its subject, SANs, and key details. The CSR signature is verified during parsing.
+
+### Arguments
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `cert_request_pem` | String | Yes | PEM-encoded Certificate Signing Request to inspect |
+
+### Attributes
+
+| Name | Type | Description |
+|---|---|---|
+| `subject_common_name` | String | Common Name (CN) from the CSR subject |
+| `subject_organization` | List(String) | Organization (O) values from the CSR subject |
+| `subject_country` | List(String) | Country (C) values from the CSR subject |
+| `dns_names` | List(String) | DNS Subject Alternative Names |
+| `ip_addresses` | List(String) | IP address Subject Alternative Names |
+| `uris` | List(String) | URI Subject Alternative Names |
+| `key_algorithm` | String | Algorithm of the public key: `ECDSA`, `RSA`, or `Ed25519` |
+| `signature_algorithm` | String | Signature algorithm used to sign the CSR |
 
 ## Data Source: certkit_pkcs12
 
@@ -165,15 +195,23 @@ data "certkit_certificate" "internal" {
 }
 ```
 
-### Generate a CSR from an existing certificate
+### Generate and inspect a CSR
 
 ```hcl
-data "certkit_cert_request" "renewal" {
+resource "certkit_cert_request" "renewal" {
   cert_pem = data.certkit_certificate.app.cert_pem
 }
 
+data "certkit_cert_request" "inspect" {
+  cert_request_pem = certkit_cert_request.renewal.cert_request_pem
+}
+
 output "csr" {
-  value = data.certkit_cert_request.renewal.cert_request_pem
+  value = certkit_cert_request.renewal.cert_request_pem
+}
+
+output "dns_names" {
+  value = data.certkit_cert_request.inspect.dns_names
 }
 ```
 
