@@ -37,7 +37,7 @@ func TestProvider(t *testing.T) {
 	}
 
 	// Resources
-	if rs := p.Resources(ctx); len(rs) != 1 {
-		t.Errorf("expected 1 resource, got %d", len(rs))
+	if rs := p.Resources(ctx); len(rs) != 3 {
+		t.Errorf("expected 3 resources, got %d", len(rs))
 	}
 }

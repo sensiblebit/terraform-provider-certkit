@@ -1,6 +1,6 @@
 # terraform-provider-certkit
 
-Terraform provider for certificate chain resolution, bundling, and encoding.
+Terraform provider for certificate chain resolution, bundling, encoding, and decoding.
 
 ## Quick Start
 
@@ -32,8 +32,10 @@ output "fullchain" {
 - **Fingerprints and identifiers** -- SHA-256 fingerprints, computed SKID (RFC 7093), embedded SKID/AKID for every certificate in the chain
 - **CSR generation** -- generate a Certificate Signing Request from an existing certificate's Subject and SANs, with private key stored in state
 - **CSR inspection** -- parse an existing CSR to extract subject, SANs, key algorithm, and signature algorithm
-- **PKCS#12 encoding** -- bundle leaf + chain + private key into a PFX file (base64-encoded)
-- **PKCS#7 encoding** -- bundle certificates into a certs-only P7B file (base64-encoded)
+- **PKCS#12 encoding** -- bundle leaf + chain + private key into a PFX file (base64-encoded, stored in state)
+- **PKCS#12 decoding** -- parse a PFX bundle to extract certificate, private key, CA chain, and key algorithm
+- **PKCS#7 encoding** -- bundle certificates into a certs-only P7B file (base64-encoded, stored in state)
+- **PKCS#7 decoding** -- parse a P7B bundle to extract certificates with metadata (CN, fingerprint)
 - **No external dependencies** -- pure Go, no OpenSSL or shell commands
 
 ## Resources
@@ -41,6 +43,8 @@ output "fullchain" {
 | Resource | Description |
 |---|---|
 | `certkit_cert_request` | Generate a CSR from a certificate (stores key in state) |
+| `certkit_pkcs12` | Encode a PKCS#12/PFX bundle (stores bundle in state) |
+| `certkit_pkcs7` | Encode a PKCS#7/P7B bundle (stores bundle in state) |
 
 ## Data Sources
 
@@ -48,8 +52,8 @@ output "fullchain" {
 |---|---|
 | `certkit_certificate` | Resolve and verify a certificate chain |
 | `certkit_cert_request` | Parse and inspect a CSR |
-| `certkit_pkcs12` | Encode a PKCS#12/PFX bundle |
-| `certkit_pkcs7` | Encode a PKCS#7/P7B bundle |
+| `certkit_pkcs12` | Decode a PKCS#12/PFX bundle |
+| `certkit_pkcs7` | Decode a PKCS#7/P7B bundle |
 
 ## Data Source: certkit_certificate
 
@@ -106,6 +110,44 @@ Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, UR
 | `private_key_pem` | String, Sensitive | Private key used (provided or auto-generated) |
 | `key_algorithm` | String | Algorithm: `ECDSA`, `RSA`, or `Ed25519` |
 
+## Resource: certkit_pkcs12
+
+Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle. Stored in state. All inputs force replacement when changed.
+
+### Arguments
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `cert_pem` | String | Yes | PEM-encoded leaf certificate |
+| `private_key_pem` | String | Yes | PEM-encoded private key (Sensitive) |
+| `ca_certs_pem` | List(String) | No | PEM-encoded CA certificates to include |
+| `password` | String | No | Password for PKCS#12 encryption (Sensitive, default: empty) |
+
+### Attributes
+
+| Name | Type | Description |
+|---|---|---|
+| `content` | String, Sensitive | Base64-encoded PKCS#12/PFX bundle |
+
+## Resource: certkit_pkcs7
+
+Encodes certificates into a certs-only PKCS#7/P7B bundle (no private key). Stored in state. All inputs force replacement when changed.
+
+### Arguments
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `cert_pem` | String | No | PEM-encoded primary certificate |
+| `ca_certs_pem` | List(String) | No | PEM-encoded CA certificates to include |
+
+At least one of `cert_pem` or `ca_certs_pem` must be set.
+
+### Attributes
+
+| Name | Type | Description |
+|---|---|---|
+| `content` | String | Base64-encoded PKCS#7/P7B bundle |
+
 ## Data Source: certkit_cert_request
 
 Parses a PEM-encoded Certificate Signing Request and exposes its subject, SANs, and key details. The CSR signature is verified during parsing.
@@ -131,41 +173,39 @@ Parses a PEM-encoded Certificate Signing Request and exposes its subject, SANs, 
 
 ## Data Source: certkit_pkcs12
 
-Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle.
+Decodes a base64-encoded PKCS#12/PFX bundle and exposes its contents.
 
 ### Arguments
 
 | Name | Type | Required | Description |
 |---|---|---|---|
-| `cert_pem` | String | Yes | PEM-encoded leaf certificate |
-| `private_key_pem` | String | Yes | PEM-encoded private key (Sensitive) |
-| `ca_certs_pem` | List(String) | No | PEM-encoded CA certificates to include |
-| `password` | String | No | Password for PKCS#12 encryption (Sensitive, default: empty) |
+| `content` | String | Yes | Base64-encoded PKCS#12/PFX bundle (Sensitive) |
+| `password` | String | No | Password for PKCS#12 decryption (Sensitive, default: empty) |
 
 ### Attributes
 
 | Name | Type | Description |
 |---|---|---|
-| `content` | String, Sensitive | Base64-encoded PKCS#12/PFX bundle |
+| `cert_pem` | String | PEM-encoded leaf certificate |
+| `private_key_pem` | String, Sensitive | PEM-encoded private key (PKCS#8 format) |
+| `ca_certs_pem` | List(String) | PEM-encoded CA certificates |
+| `key_algorithm` | String | Algorithm: `ECDSA`, `RSA`, or `Ed25519` |
 
 ## Data Source: certkit_pkcs7
 
-Encodes certificates into a certs-only PKCS#7/P7B bundle (no private key).
+Decodes a base64-encoded PKCS#7/P7B bundle and exposes the certificates it contains.
 
 ### Arguments
 
 | Name | Type | Required | Description |
 |---|---|---|---|
-| `cert_pem` | String | No | PEM-encoded primary certificate |
-| `ca_certs_pem` | List(String) | No | PEM-encoded CA certificates to include |
-
-At least one of `cert_pem` or `ca_certs_pem` must be set.
+| `content` | String | Yes | Base64-encoded PKCS#7/P7B bundle |
 
 ### Attributes
 
 | Name | Type | Description |
 |---|---|---|
-| `content` | String | Base64-encoded PKCS#7/P7B bundle |
+| `certificates` | List(Object) | Certificates with `cert_pem`, `subject_common_name`, `sha256_fingerprint` |
 
 ## Examples
 
@@ -215,32 +255,49 @@ output "dns_names" {
 }
 ```
 
-### Create a PKCS#12 bundle
+### Encode and decode a PKCS#12 bundle
 
 ```hcl
-data "certkit_pkcs12" "bundle" {
+resource "certkit_pkcs12" "bundle" {
   cert_pem        = data.certkit_certificate.app.cert_pem
   private_key_pem = file("certs/key.pem")
   ca_certs_pem    = [for i in data.certkit_certificate.app.intermediates : i.cert_pem]
   password        = "changeit"
 }
 
+data "certkit_pkcs12" "decoded" {
+  content  = certkit_pkcs12.bundle.content
+  password = "changeit"
+}
+
 output "pfx" {
-  value     = data.certkit_pkcs12.bundle.content
+  value     = certkit_pkcs12.bundle.content
   sensitive = true
+}
+
+output "decoded_algorithm" {
+  value = data.certkit_pkcs12.decoded.key_algorithm
 }
 ```
 
-### Create a PKCS#7 bundle
+### Encode and decode a PKCS#7 bundle
 
 ```hcl
-data "certkit_pkcs7" "bundle" {
+resource "certkit_pkcs7" "bundle" {
   cert_pem     = data.certkit_certificate.app.cert_pem
   ca_certs_pem = [for i in data.certkit_certificate.app.intermediates : i.cert_pem]
 }
 
+data "certkit_pkcs7" "decoded" {
+  content = certkit_pkcs7.bundle.content
+}
+
 output "p7b" {
-  value = data.certkit_pkcs7.bundle.content
+  value = certkit_pkcs7.bundle.content
+}
+
+output "cert_count" {
+  value = length(data.certkit_pkcs7.decoded.certificates)
 }
 ```
 

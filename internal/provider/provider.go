@@ -48,5 +48,7 @@ func (p *certkitProvider) DataSources(_ context.Context) []func() datasource.Dat
 func (p *certkitProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewCertRequestResource,
+		NewPKCS12Resource,
+		NewPKCS7Resource,
 	}
 }

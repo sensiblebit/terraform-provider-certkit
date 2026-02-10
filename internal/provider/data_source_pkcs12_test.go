@@ -26,9 +26,9 @@ func TestPKCS12DataSource(t *testing.T) {
 		t.Fatal(schemaResp.Diagnostics)
 	}
 
-	required := []string{"cert_pem", "private_key_pem"}
-	optional := []string{"ca_certs_pem", "password"}
-	computed := []string{"content", "id"}
+	required := []string{"content"}
+	optional := []string{"password"}
+	computed := []string{"cert_pem", "private_key_pem", "ca_certs_pem", "key_algorithm", "id"}
 	for _, attr := range slices.Concat(required, optional, computed) {
 		if _, ok := schemaResp.Schema.Attributes[attr]; !ok {
 			t.Errorf("missing attribute %q", attr)
@@ -36,44 +36,41 @@ func TestPKCS12DataSource(t *testing.T) {
 	}
 }
 
-// TestAccPKCS12DataSource tests PKCS#12 encoding composing with certkit_certificate.
-func TestAccPKCS12DataSource(t *testing.T) {
-	caPEM, intermediatePEM, leafPEM, leafKeyPEM := generateTestPKIWithKey(t)
+// TestAccPKCS12DataSource_roundTrip encodes with the resource, decodes with the data source.
+func TestAccPKCS12DataSource_roundTrip(t *testing.T) {
+	_, intermediatePEM, leafPEM, leafKeyPEM := generateTestPKIWithKey(t)
 
 	config := fmt.Sprintf(`
 provider "certkit" {}
 
-data "certkit_certificate" "test" {
-  leaf_pem = <<-EOT
+resource "certkit_pkcs12" "encode" {
+  cert_pem        = <<-EOT
 %sEOT
-
-  extra_intermediates_pem = [<<-EOT
-%sEOT
-  ]
-
-  fetch_aia   = false
-  trust_store = "custom"
-  custom_roots_pem = [<<-EOT
-%sEOT
-  ]
-}
-
-data "certkit_pkcs12" "test" {
-  cert_pem        = data.certkit_certificate.test.cert_pem
-  ca_certs_pem    = [for i in data.certkit_certificate.test.intermediates : i.cert_pem]
   private_key_pem = <<-EOT
 %sEOT
+  ca_certs_pem    = [<<-EOT
+%sEOT
+  ]
   password        = "test-password"
 }
-`, leafPEM, intermediatePEM, caPEM, leafKeyPEM)
+
+data "certkit_pkcs12" "decode" {
+  content  = certkit_pkcs12.encode.content
+  password = "test-password"
+}
+`, leafPEM, leafKeyPEM, intermediatePEM)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{{
 			Config: config,
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.test", "content"),
-				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.test", "id"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.decode", "cert_pem"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.decode", "private_key_pem"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.decode", "key_algorithm"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs12.decode", "id"),
+				resource.TestCheckResourceAttr("data.certkit_pkcs12.decode", "key_algorithm", "ECDSA"),
+				resource.TestCheckResourceAttr("data.certkit_pkcs12.decode", "ca_certs_pem.#", "1"),
 			),
 		}},
 	})

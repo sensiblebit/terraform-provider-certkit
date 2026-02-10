@@ -3,10 +3,10 @@ package provider
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -15,13 +15,12 @@ import (
 var _ datasource.DataSource = &pkcs7DataSource{}
 
 type pkcs7Model struct {
-	// Inputs
-	CertPEM    types.String `tfsdk:"cert_pem"`
-	CACertsPEM types.List   `tfsdk:"ca_certs_pem"`
+	// Input
+	Content types.String `tfsdk:"content"`
 
 	// Outputs
-	Content types.String `tfsdk:"content"`
-	ID      types.String `tfsdk:"id"`
+	Certificates types.List   `tfsdk:"certificates"`
+	ID           types.String `tfsdk:"id"`
 }
 
 type pkcs7DataSource struct{}
@@ -34,22 +33,41 @@ func (d *pkcs7DataSource) Metadata(_ context.Context, req datasource.MetadataReq
 	resp.TypeName = req.ProviderTypeName + "_pkcs7"
 }
 
+var pkcs7CertObjectType = types.ObjectType{
+	AttrTypes: map[string]attr.Type{
+		"cert_pem":             types.StringType,
+		"subject_common_name":  types.StringType,
+		"sha256_fingerprint":   types.StringType,
+	},
+}
+
 func (d *pkcs7DataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Encodes certificates into a PKCS#7/P7B bundle (certs only, no private key).",
+		Description: "Decodes a PKCS#7/P7B bundle and exposes the certificates it contains.",
 		Attributes: map[string]schema.Attribute{
-			"cert_pem": schema.StringAttribute{
-				Description: "PEM-encoded primary certificate to include.",
-				Optional:    true,
-			},
-			"ca_certs_pem": schema.ListAttribute{
-				Description: "PEM-encoded CA certificates to include in the bundle.",
-				Optional:    true,
-				ElementType: types.StringType,
-			},
 			"content": schema.StringAttribute{
-				Description: "Base64-encoded PKCS#7/P7B bundle.",
+				Description: "Base64-encoded PKCS#7/P7B bundle to decode.",
+				Required:    true,
+			},
+			"certificates": schema.ListNestedAttribute{
+				Description: "Certificates extracted from the PKCS#7 bundle.",
 				Computed:    true,
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"cert_pem": schema.StringAttribute{
+							Description: "PEM-encoded certificate.",
+							Computed:    true,
+						},
+						"subject_common_name": schema.StringAttribute{
+							Description: "Common Name (CN) from the certificate subject.",
+							Computed:    true,
+						},
+						"sha256_fingerprint": schema.StringAttribute{
+							Description: "SHA-256 fingerprint of the certificate.",
+							Computed:    true,
+						},
+					},
+				},
 			},
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -65,59 +83,48 @@ func (d *pkcs7DataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	var allCerts []*x509.Certificate
-
-	// Parse primary cert
-	if !data.CertPEM.IsNull() && data.CertPEM.ValueString() != "" {
-		cert, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
-		if err != nil {
-			resp.Diagnostics.AddError("Invalid Certificate", err.Error())
-			return
-		}
-		allCerts = append(allCerts, cert)
-	}
-
-	// Parse CA certs
-	if !data.CACertsPEM.IsNull() {
-		var caPEMs []string
-		resp.Diagnostics.Append(data.CACertsPEM.ElementsAs(ctx, &caPEMs, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, p := range caPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
-			if err != nil {
-				resp.Diagnostics.AddError("Invalid CA Certificate", err.Error())
-				return
-			}
-			allCerts = append(allCerts, certs...)
-		}
-	}
-
-	// Validate at least one cert
-	if len(allCerts) == 0 {
-		resp.Diagnostics.AddError(
-			"Invalid Configuration",
-			"At least one of cert_pem or ca_certs_pem must be set.",
-		)
-		return
-	}
-
-	// Encode PKCS#7
-	p7bData, err := EncodePKCS7(allCerts)
+	// Base64-decode the PKCS#7 content
+	derData, err := base64.StdEncoding.DecodeString(data.Content.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("PKCS#7 Encoding Failed", err.Error())
+		resp.Diagnostics.AddError("Invalid Base64", fmt.Sprintf("Failed to decode base64 content: %s", err))
 		return
 	}
 
-	data.Content = types.StringValue(base64.StdEncoding.EncodeToString(p7bData))
+	// Decode PKCS#7
+	certs, err := DecodePKCS7(derData)
+	if err != nil {
+		resp.Diagnostics.AddError("PKCS#7 Decoding Failed", err.Error())
+		return
+	}
+
+	// Build certificate list
+	certObjects := make([]types.Object, len(certs))
+	for i, cert := range certs {
+		certObjects[i], _ = types.ObjectValue(
+			pkcs7CertObjectType.AttrTypes,
+			map[string]attr.Value{
+				"cert_pem":            types.StringValue(CertToPEM(cert)),
+				"subject_common_name": types.StringValue(cert.Subject.CommonName),
+				"sha256_fingerprint":  types.StringValue(CertFingerprint(cert)),
+			},
+		)
+	}
+	data.Certificates, _ = types.ListValue(pkcs7CertObjectType, certObjectsToValues(certObjects))
 
 	// ID from hash of all cert DER bytes
 	h := sha256.New()
-	for _, cert := range allCerts {
+	for _, cert := range certs {
 		h.Write(cert.Raw)
 	}
 	data.ID = types.StringValue(fmt.Sprintf("%x", h.Sum(nil)[:8]))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func certObjectsToValues(objects []types.Object) []attr.Value {
+	values := make([]attr.Value, len(objects))
+	for i, o := range objects {
+		values[i] = o
+	}
+	return values
 }

@@ -471,6 +471,43 @@ func PublicKeyAlgorithmName(key crypto.PublicKey) string {
 	}
 }
 
+// DecodePKCS12 decodes a PKCS#12/PFX bundle and returns the private key, leaf certificate,
+// and CA certificates. Returns an error if decoding fails.
+func DecodePKCS12(pfxData []byte, password string) (crypto.PrivateKey, *x509.Certificate, []*x509.Certificate, error) {
+	privateKey, leaf, caCerts, err := gopkcs12.DecodeChain(pfxData, password)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("decoding PKCS#12: %w", err)
+	}
+	return privateKey, leaf, caCerts, nil
+}
+
+// DecodePKCS7 decodes a DER-encoded PKCS#7 bundle and returns the certificates it contains.
+// Returns an error if decoding fails or the bundle contains no certificates.
+func DecodePKCS7(derData []byte) ([]*x509.Certificate, error) {
+	p7, err := pkcs7.Parse(derData)
+	if err != nil {
+		return nil, fmt.Errorf("parsing PKCS#7: %w", err)
+	}
+	if len(p7.Certificates) == 0 {
+		return nil, fmt.Errorf("PKCS#7 bundle contains no certificates")
+	}
+	return p7.Certificates, nil
+}
+
+// MarshalPrivateKeyToPEM marshals a private key to PKCS#8 PEM format.
+// Supports ECDSA, RSA, and Ed25519 keys.
+func MarshalPrivateKeyToPEM(key crypto.PrivateKey) (string, error) {
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return "", fmt.Errorf("marshaling private key to PKCS#8: %w", err)
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: der,
+	})
+	return string(pemBytes), nil
+}
+
 // ParsePEMCertificateRequest parses a single certificate request from PEM data.
 func ParsePEMCertificateRequest(pemData []byte) (*x509.CertificateRequest, error) {
 	block, _ := pem.Decode(pemData)

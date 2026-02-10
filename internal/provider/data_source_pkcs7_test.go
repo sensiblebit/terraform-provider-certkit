@@ -26,40 +26,35 @@ func TestPKCS7DataSource(t *testing.T) {
 		t.Fatal(schemaResp.Diagnostics)
 	}
 
-	optional := []string{"cert_pem", "ca_certs_pem"}
-	computed := []string{"content", "id"}
-	for _, attr := range slices.Concat(optional, computed) {
+	required := []string{"content"}
+	computed := []string{"certificates", "id"}
+	for _, attr := range slices.Concat(required, computed) {
 		if _, ok := schemaResp.Schema.Attributes[attr]; !ok {
 			t.Errorf("missing attribute %q", attr)
 		}
 	}
 }
 
-// TestAccPKCS7DataSource tests PKCS#7 encoding composing with certkit_certificate.
-func TestAccPKCS7DataSource(t *testing.T) {
+// TestAccPKCS7DataSource_roundTrip encodes with the resource, decodes with the data source.
+func TestAccPKCS7DataSource_roundTrip(t *testing.T) {
 	caPEM, intermediatePEM, leafPEM := generateTestPKI(t)
 
 	config := fmt.Sprintf(`
 provider "certkit" {}
 
-data "certkit_certificate" "test" {
-  leaf_pem = <<-EOT
+resource "certkit_pkcs7" "encode" {
+  cert_pem     = <<-EOT
 %sEOT
-
-  extra_intermediates_pem = [<<-EOT
+  ca_certs_pem = [<<-EOT
 %sEOT
-  ]
-
-  fetch_aia   = false
-  trust_store = "custom"
-  custom_roots_pem = [<<-EOT
+,
+    <<-EOT
 %sEOT
   ]
 }
 
-data "certkit_pkcs7" "test" {
-  cert_pem     = data.certkit_certificate.test.cert_pem
-  ca_certs_pem = [for i in data.certkit_certificate.test.intermediates : i.cert_pem]
+data "certkit_pkcs7" "decode" {
+  content = certkit_pkcs7.encode.content
 }
 `, leafPEM, intermediatePEM, caPEM)
 
@@ -68,37 +63,11 @@ data "certkit_pkcs7" "test" {
 		Steps: []resource.TestStep{{
 			Config: config,
 			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.test", "content"),
-				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.test", "id"),
-			),
-		}},
-	})
-}
-
-// TestAccPKCS7DataSource_caCertsOnly tests PKCS#7 with only ca_certs_pem (no cert_pem).
-func TestAccPKCS7DataSource_caCertsOnly(t *testing.T) {
-	caPEM, intermediatePEM, _ := generateTestPKI(t)
-
-	config := fmt.Sprintf(`
-provider "certkit" {}
-
-data "certkit_pkcs7" "test" {
-  ca_certs_pem = [
-    <<-EOT
-%sEOT
-,
-    <<-EOT
-%sEOT
-  ]
-}
-`, intermediatePEM, caPEM)
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{{
-			Config: config,
-			Check: resource.ComposeAggregateTestCheckFunc(
-				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.test", "content"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.decode", "id"),
+				resource.TestCheckResourceAttr("data.certkit_pkcs7.decode", "certificates.#", "3"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.decode", "certificates.0.cert_pem"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.decode", "certificates.0.subject_common_name"),
+				resource.TestCheckResourceAttrSet("data.certkit_pkcs7.decode", "certificates.0.sha256_fingerprint"),
 			),
 		}},
 	})

@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 
@@ -15,15 +14,16 @@ import (
 var _ datasource.DataSource = &pkcs12DataSource{}
 
 type pkcs12Model struct {
-	// Inputs
-	CertPEM       types.String `tfsdk:"cert_pem"`
-	CACertsPEM    types.List   `tfsdk:"ca_certs_pem"`
-	PrivateKeyPEM types.String `tfsdk:"private_key_pem"`
-	Password      types.String `tfsdk:"password"`
+	// Input
+	Content  types.String `tfsdk:"content"`
+	Password types.String `tfsdk:"password"`
 
 	// Outputs
-	Content types.String `tfsdk:"content"`
-	ID      types.String `tfsdk:"id"`
+	CertPEM       types.String `tfsdk:"cert_pem"`
+	PrivateKeyPEM types.String `tfsdk:"private_key_pem"`
+	CACertsPEM    types.List   `tfsdk:"ca_certs_pem"`
+	KeyAlgorithm  types.String `tfsdk:"key_algorithm"`
+	ID            types.String `tfsdk:"id"`
 }
 
 type pkcs12DataSource struct{}
@@ -38,31 +38,35 @@ func (d *pkcs12DataSource) Metadata(_ context.Context, req datasource.MetadataRe
 
 func (d *pkcs12DataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle.",
+		Description: "Decodes a PKCS#12/PFX bundle and exposes its certificate, private key, and CA chain.",
 		Attributes: map[string]schema.Attribute{
-			"cert_pem": schema.StringAttribute{
-				Description: "PEM-encoded leaf certificate.",
-				Required:    true,
-			},
-			"ca_certs_pem": schema.ListAttribute{
-				Description: "PEM-encoded CA certificates to include in the bundle.",
-				Optional:    true,
-				ElementType: types.StringType,
-			},
-			"private_key_pem": schema.StringAttribute{
-				Description: "PEM-encoded private key for the leaf certificate.",
+			"content": schema.StringAttribute{
+				Description: "Base64-encoded PKCS#12/PFX bundle to decode.",
 				Required:    true,
 				Sensitive:   true,
 			},
 			"password": schema.StringAttribute{
-				Description: "Password for PKCS#12 encryption. Default: empty string.",
+				Description: "Password for PKCS#12 decryption. Default: empty string.",
 				Optional:    true,
 				Sensitive:   true,
 			},
-			"content": schema.StringAttribute{
-				Description: "Base64-encoded PKCS#12/PFX bundle.",
+			"cert_pem": schema.StringAttribute{
+				Description: "PEM-encoded leaf certificate extracted from the bundle.",
+				Computed:    true,
+			},
+			"private_key_pem": schema.StringAttribute{
+				Description: "PEM-encoded private key extracted from the bundle (PKCS#8 format).",
 				Computed:    true,
 				Sensitive:   true,
+			},
+			"ca_certs_pem": schema.ListAttribute{
+				Description: "PEM-encoded CA certificates extracted from the bundle.",
+				Computed:    true,
+				ElementType: types.StringType,
+			},
+			"key_algorithm": schema.StringAttribute{
+				Description: "Algorithm of the private key: ECDSA, RSA, or Ed25519.",
+				Computed:    true,
 			},
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -78,36 +82,11 @@ func (d *pkcs12DataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	// Parse leaf certificate
-	leaf, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
+	// Base64-decode the PKCS#12 content
+	pfxData, err := base64.StdEncoding.DecodeString(data.Content.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Invalid Certificate", err.Error())
+		resp.Diagnostics.AddError("Invalid Base64", fmt.Sprintf("Failed to decode base64 content: %s", err))
 		return
-	}
-
-	// Parse private key
-	parsedKey, err := ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid Private Key", err.Error())
-		return
-	}
-
-	// Parse CA certs
-	var caCerts []*x509.Certificate
-	if !data.CACertsPEM.IsNull() {
-		var caPEMs []string
-		resp.Diagnostics.Append(data.CACertsPEM.ElementsAs(ctx, &caPEMs, false)...)
-		if resp.Diagnostics.HasError() {
-			return
-		}
-		for _, p := range caPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
-			if err != nil {
-				resp.Diagnostics.AddError("Invalid CA Certificate", err.Error())
-				return
-			}
-			caCerts = append(caCerts, certs...)
-		}
 	}
 
 	// Password
@@ -116,14 +95,33 @@ func (d *pkcs12DataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		password = data.Password.ValueString()
 	}
 
-	// Encode PKCS#12
-	pfxData, err := EncodePKCS12(parsedKey, leaf, caCerts, password)
+	// Decode PKCS#12
+	privateKey, leaf, caCerts, err := DecodePKCS12(pfxData, password)
 	if err != nil {
-		resp.Diagnostics.AddError("PKCS#12 Encoding Failed", err.Error())
+		resp.Diagnostics.AddError("PKCS#12 Decoding Failed", err.Error())
 		return
 	}
 
-	data.Content = types.StringValue(base64.StdEncoding.EncodeToString(pfxData))
+	// Leaf cert PEM
+	data.CertPEM = types.StringValue(CertToPEM(leaf))
+
+	// Private key PEM (PKCS#8)
+	keyPEM, err := MarshalPrivateKeyToPEM(privateKey)
+	if err != nil {
+		resp.Diagnostics.AddError("Private Key Marshal Failed", err.Error())
+		return
+	}
+	data.PrivateKeyPEM = types.StringValue(keyPEM)
+
+	// CA certs PEM list
+	caPEMValues := make([]types.String, len(caCerts))
+	for i, ca := range caCerts {
+		caPEMValues[i] = types.StringValue(CertToPEM(ca))
+	}
+	data.CACertsPEM, _ = types.ListValueFrom(ctx, types.StringType, caPEMValues)
+
+	// Key algorithm
+	data.KeyAlgorithm = types.StringValue(KeyAlgorithmName(privateKey))
 
 	// ID from leaf cert hash
 	idHash := sha256.Sum256(leaf.Raw)

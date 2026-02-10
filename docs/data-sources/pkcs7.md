@@ -1,43 +1,33 @@
 ---
 page_title: "certkit_pkcs7 Data Source - certkit"
 description: |-
-  Encodes certificates into a PKCS#7/P7B bundle (certs only, no private key).
+  Decodes a PKCS#7/P7B bundle and exposes the certificates it contains.
 ---
 
 # certkit_pkcs7 (Data Source)
 
-Encodes certificates into a certs-only PKCS#7/P7B bundle (degenerate SignedData structure with no signatures). The output is base64-encoded and can be written to a file or passed to resources that accept P7B input.
-
-No private key is included or required.
+Decodes a base64-encoded PKCS#7/P7B bundle and exposes the certificates it contains, with PEM encoding, subject common name, and SHA-256 fingerprint for each.
 
 ## Example Usage
 
-### Basic
+### Decode a PKCS#7 bundle
 
 ```hcl
-data "certkit_certificate" "app" {
-  url         = "https://example.com"
-  trust_store = "mozilla"
+resource "certkit_pkcs7" "bundle" {
+  cert_pem     = file("certs/leaf.pem")
+  ca_certs_pem = [file("certs/intermediate.pem"), file("certs/root.pem")]
 }
 
-data "certkit_pkcs7" "bundle" {
-  cert_pem     = data.certkit_certificate.app.cert_pem
-  ca_certs_pem = [for i in data.certkit_certificate.app.intermediates : i.cert_pem]
+data "certkit_pkcs7" "decoded" {
+  content = certkit_pkcs7.bundle.content
 }
 
-output "p7b_base64" {
-  value = data.certkit_pkcs7.bundle.content
+output "cert_count" {
+  value = length(data.certkit_pkcs7.decoded.certificates)
 }
-```
 
-### CA certificates only
-
-```hcl
-data "certkit_pkcs7" "ca_bundle" {
-  ca_certs_pem = [
-    file("certs/intermediate.pem"),
-    file("certs/root.pem"),
-  ]
+output "first_cert_cn" {
+  value = data.certkit_pkcs7.decoded.certificates[0].subject_common_name
 }
 ```
 
@@ -45,14 +35,12 @@ data "certkit_pkcs7" "ca_bundle" {
 
 ### Required
 
-At least one of `cert_pem` or `ca_certs_pem` must be set.
-
-### Optional
-
-- `cert_pem` (String) - PEM-encoded primary certificate to include.
-- `ca_certs_pem` (List of String) - PEM-encoded CA certificates to include in the bundle.
+- `content` (String) - Base64-encoded PKCS#7/P7B bundle to decode.
 
 ### Read-Only
 
 - `id` (String) - Computed identifier.
-- `content` (String) - Base64-encoded PKCS#7/P7B bundle.
+- `certificates` (List of Object) - Certificates extracted from the PKCS#7 bundle. Each object contains:
+  - `cert_pem` (String) - PEM-encoded certificate.
+  - `subject_common_name` (String) - Common Name (CN) from the certificate subject.
+  - `sha256_fingerprint` (String) - SHA-256 fingerprint of the certificate.
