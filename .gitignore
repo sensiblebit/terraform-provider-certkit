@@ -1,0 +1,52 @@
+# Binaries
+terraform-provider-certkit
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Go build cache
+*.o
+*.a
+
+# Go coverage
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Environment
+.env
+.envrc
+
+# Debug
+debug.log
+
+# Test certs
+testdata/*.key
