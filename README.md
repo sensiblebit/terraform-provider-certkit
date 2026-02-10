@@ -1,6 +1,18 @@
 # terraform-provider-certkit
 
-Terraform provider for certificate chain resolution, bundling, encoding, and decoding.
+A Swiss Army knife for certificates in Terraform. Resolve chains, verify trust, generate CSRs, encode and decode PKCS#12 and PKCS#7 bundles. All the certificate plumbing that other providers don't handle.
+
+## Why certkit?
+
+Working with certificates in Terraform usually means shelling out to OpenSSL, writing wrapper scripts, or accepting that some operations just aren't possible declaratively. certkit fills those gaps:
+
+- **Fetch a leaf cert from any HTTPS endpoint** and automatically resolve the full chain via AIA
+- **Verify chains against system, Mozilla, or custom trust stores**, including airgapped environments
+- **Generate CSRs** that match an existing certificate's subject and SANs, for zero-downtime renewals
+- **Convert between formats** (PEM, PKCS#12/PFX, PKCS#7/P7B) without leaving Terraform
+- **Inspect anything** by decoding bundles, extracting fingerprints, and comparing SKIDs across mixed chains
+
+Pure Go. No OpenSSL. No shell commands. No external dependencies.
 
 ## Quick Start
 
@@ -16,6 +28,7 @@ terraform {
 
 provider "certkit" {}
 
+# Fetch the leaf cert and resolve the full chain
 data "certkit_certificate" "app" {
   url         = "https://example.com"
   trust_store = "mozilla"
@@ -24,36 +37,30 @@ data "certkit_certificate" "app" {
 output "fullchain" {
   value = data.certkit_certificate.app.fullchain_pem
 }
+
+output "fingerprint" {
+  value = data.certkit_certificate.app.sha256_fingerprint
+}
 ```
-
-## Features
-
-- **Chain resolution** -- fetch leaf certs via TLS or provide PEM, resolve intermediates via AIA, verify against system/Mozilla/custom trust stores
-- **Fingerprints and identifiers** -- SHA-256 fingerprints, computed SKID (RFC 7093), embedded SKID/AKID for every certificate in the chain
-- **CSR generation** -- generate a Certificate Signing Request from an existing certificate's Subject and SANs, with private key stored in state
-- **CSR inspection** -- parse an existing CSR to extract subject, SANs, key algorithm, and signature algorithm
-- **PKCS#12 encoding** -- bundle leaf + chain + private key into a PFX file (base64-encoded, stored in state)
-- **PKCS#12 decoding** -- parse a PFX bundle to extract certificate, private key, CA chain, and key algorithm
-- **PKCS#7 encoding** -- bundle certificates into a certs-only P7B file (base64-encoded, stored in state)
-- **PKCS#7 decoding** -- parse a P7B bundle to extract certificates with metadata (CN, fingerprint)
-- **No external dependencies** -- pure Go, no OpenSSL or shell commands
 
 ## Resources
 
 | Resource | Description |
 |---|---|
-| `certkit_cert_request` | Generate a CSR from a certificate (stores key in state) |
-| `certkit_pkcs12` | Encode a PKCS#12/PFX bundle (stores bundle in state) |
-| `certkit_pkcs7` | Encode a PKCS#7/P7B bundle (stores bundle in state) |
+| `certkit_cert_request` | Generate a CSR from an existing certificate's subject and SANs |
+| `certkit_pkcs12` | Encode a PKCS#12/PFX bundle from cert + key + chain |
+| `certkit_pkcs7` | Encode a PKCS#7/P7B certificate-only bundle |
 
 ## Data Sources
 
 | Data Source | Description |
 |---|---|
-| `certkit_certificate` | Resolve and verify a certificate chain |
-| `certkit_cert_request` | Parse and inspect a CSR |
-| `certkit_pkcs12` | Decode a PKCS#12/PFX bundle |
-| `certkit_pkcs7` | Decode a PKCS#7/P7B bundle |
+| `certkit_certificate` | Resolve, verify, and inspect a certificate chain |
+| `certkit_cert_request` | Parse and inspect an existing CSR |
+| `certkit_pkcs12` | Decode a PKCS#12/PFX bundle into its components |
+| `certkit_pkcs7` | Decode a PKCS#7/P7B bundle into individual certificates |
+
+---
 
 ## Data Source: certkit_certificate
 
@@ -93,7 +100,7 @@ Resolves a certificate chain from a leaf certificate (fetched via TLS or provide
 
 ## Resource: certkit_cert_request
 
-Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, URI) from an existing certificate. The private key is stored in Terraform state.
+Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, URI) from an existing certificate. Useful for preparing renewals that preserve the original certificate's identity. The private key is stored in Terraform state.
 
 ### Arguments
 
@@ -112,7 +119,7 @@ Generates a Certificate Signing Request by copying Subject and SANs (DNS, IP, UR
 
 ## Resource: certkit_pkcs12
 
-Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle. Stored in state. All inputs force replacement when changed.
+Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle. All inputs force replacement when changed.
 
 ### Arguments
 
@@ -131,7 +138,7 @@ Encodes a certificate, CA chain, and private key into a PKCS#12/PFX bundle. Stor
 
 ## Resource: certkit_pkcs7
 
-Encodes certificates into a certs-only PKCS#7/P7B bundle (no private key). Stored in state. All inputs force replacement when changed.
+Encodes certificates into a certs-only PKCS#7/P7B bundle (no private key). All inputs force replacement when changed.
 
 ### Arguments
 
@@ -173,7 +180,7 @@ Parses a PEM-encoded Certificate Signing Request and exposes its subject, SANs, 
 
 ## Data Source: certkit_pkcs12
 
-Decodes a base64-encoded PKCS#12/PFX bundle and exposes its contents.
+Decodes a base64-encoded PKCS#12/PFX bundle and exposes its components.
 
 ### Arguments
 
@@ -207,9 +214,11 @@ Decodes a base64-encoded PKCS#7/P7B bundle and exposes the certificates it conta
 |---|---|---|
 | `certificates` | List(Object) | Certificates with `cert_pem`, `subject_common_name`, `sha256_fingerprint` |
 
+---
+
 ## Examples
 
-### Fetch and resolve a certificate chain
+### Resolve a certificate chain
 
 ```hcl
 data "certkit_certificate" "app" {
@@ -220,14 +229,18 @@ data "certkit_certificate" "app" {
 output "chain" {
   value = data.certkit_certificate.app.fullchain_pem
 }
+
+output "intermediates" {
+  value = data.certkit_certificate.app.intermediates
+}
 ```
 
-### Resolve with custom roots (offline/airgapped)
+### Verify against custom roots (offline/airgapped)
 
 ```hcl
 data "certkit_certificate" "internal" {
-  leaf_pem   = file("certs/leaf.pem")
-  fetch_aia  = false
+  leaf_pem    = file("certs/leaf.pem")
+  fetch_aia   = false
   trust_store = "custom"
 
   extra_intermediates_pem = [file("certs/intermediate.pem")]
@@ -235,18 +248,26 @@ data "certkit_certificate" "internal" {
 }
 ```
 
-### Generate and inspect a CSR
+### Generate a CSR for certificate renewal
 
 ```hcl
+# Resolve the current cert
+data "certkit_certificate" "app" {
+  url         = "https://example.com"
+  trust_store = "mozilla"
+}
+
+# Generate a CSR with the same subject and SANs
 resource "certkit_cert_request" "renewal" {
   cert_pem = data.certkit_certificate.app.cert_pem
 }
 
+# Inspect the CSR
 data "certkit_cert_request" "inspect" {
   cert_request_pem = certkit_cert_request.renewal.cert_request_pem
 }
 
-output "csr" {
+output "csr_pem" {
   value = certkit_cert_request.renewal.cert_request_pem
 }
 
@@ -255,7 +276,7 @@ output "dns_names" {
 }
 ```
 
-### Encode and decode a PKCS#12 bundle
+### Build a PFX bundle and decode it
 
 ```hcl
 resource "certkit_pkcs12" "bundle" {
@@ -270,17 +291,12 @@ data "certkit_pkcs12" "decoded" {
   password = "changeit"
 }
 
-output "pfx" {
-  value     = certkit_pkcs12.bundle.content
-  sensitive = true
-}
-
-output "decoded_algorithm" {
+output "key_algorithm" {
   value = data.certkit_pkcs12.decoded.key_algorithm
 }
 ```
 
-### Encode and decode a PKCS#7 bundle
+### Build a P7B bundle and decode it
 
 ```hcl
 resource "certkit_pkcs7" "bundle" {
@@ -290,10 +306,6 @@ resource "certkit_pkcs7" "bundle" {
 
 data "certkit_pkcs7" "decoded" {
   content = certkit_pkcs7.bundle.content
-}
-
-output "p7b" {
-  value = certkit_pkcs7.bundle.content
 }
 
 output "cert_count" {
@@ -307,7 +319,7 @@ output "cert_count" {
 
 ### SKID Calculation
 
-The `skid` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING (excluding tag, length, and unused-bits octet). This produces a 20-byte identifier that is consistent across all certificates for the same key, regardless of what the issuing CA embeds.
+The `skid` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING (excluding tag, length, and unused-bits octet). This produces a consistent 20-byte identifier for the same key, regardless of what the issuing CA embeds.
 
 The `skid_embedded` attribute returns whatever the CA placed in the Subject Key Identifier extension, which is typically SHA-1 (20 bytes) but may be full SHA-256 (32 bytes) for newer CAs.
 
@@ -316,7 +328,7 @@ The `skid_embedded` attribute returns whatever the CA placed in the Subject Key 
 | Store | Description |
 |---|---|
 | `system` | OS trust store (macOS Keychain, Linux ca-certificates, Windows CertStore) |
-| `mozilla` | Embedded Mozilla CA bundle (via [rootcerts](https://github.com/breml/rootcerts)), works on any OS |
+| `mozilla` | Embedded Mozilla CA bundle (via [rootcerts](https://github.com/breml/rootcerts)), consistent across all platforms |
 | `custom` | Only the roots provided in `custom_roots_pem` |
 
 ### Development
