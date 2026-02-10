@@ -1,3 +1,10 @@
+# Template: Custom roots (offline/airgapped)
+#
+# To use this example, place your PEM files in a certs/ subdirectory:
+#   certs/leaf.pem         - leaf certificate
+#   certs/intermediate.pem - intermediate CA certificate
+#   certs/root.pem         - root CA certificate
+
 terraform {
   required_providers {
     certkit = {
@@ -8,10 +15,9 @@ terraform {
 
 provider "certkit" {}
 
-# Resolve a certificate chain with custom roots (offline/airgapped)
 data "certkit_certificate" "internal" {
-  leaf_pem   = file("${path.module}/certs/leaf.pem")
-  fetch_aia  = false
+  leaf_pem    = file("${path.module}/certs/leaf.pem")
+  fetch_aia   = false
   trust_store = "custom"
 
   extra_intermediates_pem = [file("${path.module}/certs/intermediate.pem")]
