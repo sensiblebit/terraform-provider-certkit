@@ -119,7 +119,7 @@ func FetchLeafFromURL(rawURL string, timeoutMs int) (*x509.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("TLS dial to %s:%s: %w", host, port, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	tlsConn := conn.(*tls.Conn)
 	certs := tlsConn.ConnectionState().PeerCertificates
@@ -166,7 +166,7 @@ func fetchCertFromURL(client *http.Client, url string) (*x509.Certificate, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)

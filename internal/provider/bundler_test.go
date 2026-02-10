@@ -247,7 +247,9 @@ func TestCertSKID_vs_Embedded(t *testing.T) {
 		PublicKey asn1.BitString
 	}
 	pubKeyDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	asn1.Unmarshal(pubKeyDER, &spki)
+	if _, err := asn1.Unmarshal(pubKeyDER, &spki); err != nil {
+		t.Fatal(err)
+	}
 	sha1Hash := sha1.Sum(spki.PublicKey.Bytes)
 
 	template := &x509.Certificate{
@@ -299,7 +301,9 @@ func TestCertSKID_RFC7093Embedded(t *testing.T) {
 		PublicKey asn1.BitString
 	}
 	pubKeyDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	asn1.Unmarshal(pubKeyDER, &spki)
+	if _, err := asn1.Unmarshal(pubKeyDER, &spki); err != nil {
+		t.Fatal(err)
+	}
 	sha256Hash := sha256.Sum256(spki.PublicKey.Bytes)
 
 	template := &x509.Certificate{
@@ -334,7 +338,9 @@ func TestCertSKID_FullSHA256Embedded(t *testing.T) {
 		PublicKey asn1.BitString
 	}
 	pubKeyDER, _ := x509.MarshalPKIXPublicKey(&key.PublicKey)
-	asn1.Unmarshal(pubKeyDER, &spki)
+	if _, err := asn1.Unmarshal(pubKeyDER, &spki); err != nil {
+		t.Fatal(err)
+	}
 	sha256Hash := sha256.Sum256(spki.PublicKey.Bytes)
 
 	template := &x509.Certificate{
@@ -955,7 +961,7 @@ func TestFetchCertFromURL_DER(t *testing.T) {
 	certBytes, _ := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(certBytes)
+		_, _ = w.Write(certBytes)
 	}))
 	defer srv.Close()
 
@@ -981,7 +987,7 @@ func TestFetchCertFromURL_PEM(t *testing.T) {
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(pemBytes)
+		_, _ = w.Write(pemBytes)
 	}))
 	defer srv.Close()
 
@@ -997,7 +1003,7 @@ func TestFetchCertFromURL_PEM(t *testing.T) {
 
 func TestFetchCertFromURL_garbage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("this is not a certificate"))
+		_, _ = w.Write([]byte("this is not a certificate"))
 	}))
 	defer srv.Close()
 
@@ -1049,7 +1055,7 @@ func TestFetchAIACertificates_duplicateURLs(t *testing.T) {
 	fetchCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fetchCount++
-		w.Write(issuerBytes)
+		_, _ = w.Write(issuerBytes)
 	}))
 	defer srv.Close()
 
