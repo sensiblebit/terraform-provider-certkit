@@ -53,21 +53,30 @@ output "warnings" {
   value = data.certkit_certificate.app.warnings
 }
 
-# Generate a CSR from the resolved certificate
-data "certkit_cert_request" "app" {
+# Generate a CSR from the resolved certificate (resource)
+resource "certkit_cert_request" "app" {
   cert_pem = data.certkit_certificate.app.cert_pem
 }
 
 output "csr_pem" {
-  value = data.certkit_cert_request.app.cert_request_pem
+  value = certkit_cert_request.app.cert_request_pem
 }
 
-# Generate a PKCS#7 bundle
-data "certkit_pkcs7" "app" {
+# Encode a PKCS#7 bundle (resource)
+resource "certkit_pkcs7" "app" {
   cert_pem     = data.certkit_certificate.app.cert_pem
   ca_certs_pem = [for i in data.certkit_certificate.app.intermediates : i.cert_pem]
 }
 
 output "p7b_content" {
-  value = data.certkit_pkcs7.app.content
+  value = certkit_pkcs7.app.content
+}
+
+# Decode the PKCS#7 bundle (data source)
+data "certkit_pkcs7" "decoded" {
+  content = certkit_pkcs7.app.content
+}
+
+output "p7b_cert_count" {
+  value = length(data.certkit_pkcs7.decoded.certificates)
 }
