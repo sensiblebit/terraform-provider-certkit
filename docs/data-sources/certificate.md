@@ -75,7 +75,6 @@ Exactly one of `url` or `leaf_pem` must be set.
 - `trust_store` (String) - Trust store for verification: `system`, `mozilla`, or `custom`. Default: `system`.
 - `custom_roots_pem` (List of String) - PEM-encoded root certificates. Required when `trust_store = "custom"`.
 - `verify` (Boolean) - Verify the certificate chain against the trust store. Default: `true`.
-- `include_root` (Boolean) - Include the root certificate in `fullchain_pem`. Default: `true`.
 - `colon_separated` (Boolean) - Use colon-separated hex for fingerprints and identifiers (e.g., `ab:cd:ef`). When `false`, outputs plain hex. Default: `true`.
 
 ### Read-Only
@@ -83,7 +82,7 @@ Exactly one of `url` or `leaf_pem` must be set.
 - `id` (String) - Computed identifier.
 - `cert_pem` (String) - Leaf certificate in PEM format (normalized).
 - `chain_pem` (String) - Concatenated PEM: leaf + intermediates.
-- `fullchain_pem` (String) - Concatenated PEM: leaf + intermediates + root (if `include_root` is `true`).
+- `fullchain_pem` (String) - Concatenated PEM: leaf + intermediates + root.
 - `sha256_fingerprint` (String) - SHA-256 fingerprint of the leaf certificate.
 - `ski` (String) - Leaf Subject Key Identifier (RFC 7093 Method 1: truncated SHA-256 of public key).
 - `ski_embedded` (String) - Leaf Subject Key Identifier from the certificate extension (may be SHA-1 or SHA-256).

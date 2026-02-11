@@ -38,7 +38,6 @@ type certificateModel struct {
 	TrustStore            types.String `tfsdk:"trust_store"`
 	CustomRootsPEM        types.List   `tfsdk:"custom_roots_pem"`
 	Verify                types.Bool   `tfsdk:"verify"`
-	IncludeRoot           types.Bool   `tfsdk:"include_root"`
 	ColonSeparated        types.Bool   `tfsdk:"colon_separated"`
 
 	// Outputs - PEM
@@ -146,10 +145,6 @@ func (d *certificateDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 				Description: "Verify the certificate chain against the trust store. Default: true.",
 				Optional:    true,
 			},
-			"include_root": schema.BoolAttribute{
-				Description: "Include the root certificate in fullchain output. Default: true.",
-				Optional:    true,
-			},
 			"colon_separated": schema.BoolAttribute{
 				Description: "Use colon-separated hex for fingerprints, SKIs, and AKIs (e.g. ab:cd:ef). When false, outputs plain hex (e.g. abcdef). Default: true.",
 				Optional:    true,
@@ -165,7 +160,7 @@ func (d *certificateDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 				Computed:    true,
 			},
 			"fullchain_pem": schema.StringAttribute{
-				Description: "Concatenated PEM: leaf + intermediates + root (if include_root is true).",
+				Description: "Concatenated PEM: leaf + intermediates + root.",
 				Computed:    true,
 			},
 
@@ -275,10 +270,6 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	if !data.Verify.IsNull() {
 		opts.Verify = data.Verify.ValueBool()
 	}
-	if !data.IncludeRoot.IsNull() {
-		opts.IncludeRoot = data.IncludeRoot.ValueBool()
-	}
-
 	// Validate: trust_store value
 	switch opts.TrustStore {
 	case "system", "mozilla", "custom":
@@ -431,10 +422,8 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	// Fullchain (leaf + intermediates + root)
 	fullchainParts := make([]string, len(chainParts))
 	copy(fullchainParts, chainParts)
-	if opts.IncludeRoot {
-		for _, cert := range result.Roots {
-			fullchainParts = append(fullchainParts, certkit.CertToPEM(cert))
-		}
+	for _, cert := range result.Roots {
+		fullchainParts = append(fullchainParts, certkit.CertToPEM(cert))
 	}
 	data.FullchainPEM = types.StringValue(strings.Join(fullchainParts, ""))
 

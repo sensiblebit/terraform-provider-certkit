@@ -33,7 +33,7 @@ func TestCertificateDataSource(t *testing.T) {
 		"url", "leaf_pem",
 		"extra_intermediates_pem", "fetch_aia",
 		"aia_timeout_ms", "aia_max_depth", "trust_store", "custom_roots_pem",
-		"verify", "include_root", "colon_separated",
+		"verify", "colon_separated",
 	}
 	computed := []string{
 		"id", "cert_pem", "chain_pem", "fullchain_pem",

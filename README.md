@@ -79,7 +79,6 @@ Resolves a certificate chain from a leaf certificate (fetched via TLS or provide
 | `trust_store` | String | No | Trust store: `system`, `mozilla`, or `custom` (default: `system`) |
 | `custom_roots_pem` | List(String) | No | PEM-encoded root certificates when `trust_store = "custom"` |
 | `verify` | Bool | No | Verify the chain against the trust store (default: `true`) |
-| `include_root` | Bool | No | Include root in `fullchain_pem` output (default: `true`) |
 | `colon_separated` | Bool | No | Use colon-separated hex for identifiers (default: `true`) |
 
 ### Attributes
