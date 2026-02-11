@@ -21,10 +21,10 @@ var _ datasource.DataSource = &certificateDataSource{}
 var certInfoAttrTypesNew = map[string]attr.Type{
 	"cert_pem":            types.StringType,
 	"sha256_fingerprint":  types.StringType,
-	"skid":                types.StringType,
-	"skid_embedded":       types.StringType,
-	"akid":                types.StringType,
-	"akid_embedded":       types.StringType,
+	"ski":                types.StringType,
+	"ski_embedded":       types.StringType,
+	"aki":                types.StringType,
+	"aki_embedded":       types.StringType,
 }
 
 type certificateModel struct {
@@ -48,10 +48,10 @@ type certificateModel struct {
 
 	// Outputs - Leaf fingerprints (flat)
 	SHA256Fingerprint types.String `tfsdk:"sha256_fingerprint"`
-	SKID              types.String `tfsdk:"skid"`
-	SKIDEmbedded      types.String `tfsdk:"skid_embedded"`
-	AKID              types.String `tfsdk:"akid"`
-	AKIDEmbedded      types.String `tfsdk:"akid_embedded"`
+	SKI              types.String `tfsdk:"ski"`
+	SKIEmbedded      types.String `tfsdk:"ski_embedded"`
+	AKI              types.String `tfsdk:"aki"`
+	AKIEmbedded      types.String `tfsdk:"aki_embedded"`
 
 	// Outputs - Structured cert lists
 	Intermediates types.List `tfsdk:"intermediates"`
@@ -84,20 +84,20 @@ var certInfoNestedObjectNew = schema.NestedAttributeObject{
 			Description: "SHA-256 fingerprint of the certificate DER encoding.",
 			Computed:    true,
 		},
-		"skid": schema.StringAttribute{
+		"ski": schema.StringAttribute{
 			Description: "Subject Key Identifier (RFC 7093 Method 1: truncated SHA-256 of public key).",
 			Computed:    true,
 		},
-		"skid_embedded": schema.StringAttribute{
+		"ski_embedded": schema.StringAttribute{
 			Description: "Subject Key Identifier as embedded in the certificate extension (may be SHA-1 or SHA-256).",
 			Computed:    true,
 		},
-		"akid": schema.StringAttribute{
-			Description: "Authority Key Identifier (RFC 7093 SKID of the issuer, matches issuer's skid).",
+		"aki": schema.StringAttribute{
+			Description: "Authority Key Identifier (RFC 7093 SKI of the issuer, matches issuer's ski).",
 			Computed:    true,
 		},
-		"akid_embedded": schema.StringAttribute{
-			Description: "Authority Key Identifier as embedded in the certificate extension (matches issuer's skid_embedded).",
+		"aki_embedded": schema.StringAttribute{
+			Description: "Authority Key Identifier as embedded in the certificate extension (matches issuer's ski_embedded).",
 			Computed:    true,
 		},
 	},
@@ -151,7 +151,7 @@ func (d *certificateDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 				Optional:    true,
 			},
 			"colon_separated": schema.BoolAttribute{
-				Description: "Use colon-separated hex for fingerprints, SKIDs, and AKIDs (e.g. ab:cd:ef). When false, outputs plain hex (e.g. abcdef). Default: true.",
+				Description: "Use colon-separated hex for fingerprints, SKIs, and AKIs (e.g. ab:cd:ef). When false, outputs plain hex (e.g. abcdef). Default: true.",
 				Optional:    true,
 			},
 
@@ -174,19 +174,19 @@ func (d *certificateDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 				Description: "SHA-256 fingerprint of the leaf certificate DER encoding.",
 				Computed:    true,
 			},
-			"skid": schema.StringAttribute{
+			"ski": schema.StringAttribute{
 				Description: "Leaf Subject Key Identifier (RFC 7093 Method 1: truncated SHA-256 of public key).",
 				Computed:    true,
 			},
-			"skid_embedded": schema.StringAttribute{
+			"ski_embedded": schema.StringAttribute{
 				Description: "Leaf Subject Key Identifier as embedded in the certificate extension.",
 				Computed:    true,
 			},
-			"akid": schema.StringAttribute{
-				Description: "Leaf Authority Key Identifier (RFC 7093 SKID of the issuer).",
+			"aki": schema.StringAttribute{
+				Description: "Leaf Authority Key Identifier (RFC 7093 SKI of the issuer).",
 				Computed:    true,
 			},
-			"akid_embedded": schema.StringAttribute{
+			"aki_embedded": schema.StringAttribute{
 				Description: "Leaf Authority Key Identifier as embedded in the certificate extension.",
 				Computed:    true,
 			},
@@ -357,13 +357,13 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	leafPEM := certkit.CertToPEM(result.Leaf)
 	data.CertPEM = types.StringValue(leafPEM)
 
-	// Build ordered chain for AKID lookups: [leaf, int0, int1, ..., root]
+	// Build ordered chain for AKI lookups: [leaf, int0, int1, ..., root]
 	chain := make([]*x509.Certificate, 0, 1+len(result.Intermediates)+len(result.Roots))
 	chain = append(chain, result.Leaf)
 	chain = append(chain, result.Intermediates...)
 	chain = append(chain, result.Roots...)
 
-	akidForIndex := func(i int) string {
+	akiForIndex := func(i int) string {
 		if i+1 < len(chain) {
 			return formatHex(certkit.CertSKID(chain[i+1]))
 		}
@@ -372,20 +372,20 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	// Leaf fingerprints (flat top-level attrs)
 	data.SHA256Fingerprint = types.StringValue(certkit.CertFingerprint(result.Leaf))
-	data.SKID = types.StringValue(formatHex(certkit.CertSKID(result.Leaf)))
-	data.SKIDEmbedded = types.StringValue(formatHex(certkit.CertSKIDEmbedded(result.Leaf)))
-	data.AKID = types.StringValue(akidForIndex(0))
-	data.AKIDEmbedded = types.StringValue(formatHex(certkit.CertAKIDEmbedded(result.Leaf)))
+	data.SKI = types.StringValue(formatHex(certkit.CertSKID(result.Leaf)))
+	data.SKIEmbedded = types.StringValue(formatHex(certkit.CertSKIDEmbedded(result.Leaf)))
+	data.AKI = types.StringValue(akiForIndex(0))
+	data.AKIEmbedded = types.StringValue(formatHex(certkit.CertAKIDEmbedded(result.Leaf)))
 
 	// Helper to build a cert info object
 	buildCertInfo := func(cert *x509.Certificate, chainIdx int) (types.Object, error) {
 		obj, diags := types.ObjectValue(certInfoAttrTypesNew, map[string]attr.Value{
 			"cert_pem":            types.StringValue(certkit.CertToPEM(cert)),
 			"sha256_fingerprint":  types.StringValue(certkit.CertFingerprint(cert)),
-			"skid":                types.StringValue(formatHex(certkit.CertSKID(cert))),
-			"skid_embedded":       types.StringValue(formatHex(certkit.CertSKIDEmbedded(cert))),
-			"akid":                types.StringValue(akidForIndex(chainIdx)),
-			"akid_embedded":       types.StringValue(formatHex(certkit.CertAKIDEmbedded(cert))),
+			"ski":                types.StringValue(formatHex(certkit.CertSKID(cert))),
+			"ski_embedded":       types.StringValue(formatHex(certkit.CertSKIDEmbedded(cert))),
+			"aki":                types.StringValue(akiForIndex(chainIdx)),
+			"aki_embedded":       types.StringValue(formatHex(certkit.CertAKIDEmbedded(cert))),
 		})
 		if diags.HasError() {
 			return types.ObjectNull(certInfoAttrTypesNew), fmt.Errorf("building cert info object: %s", diags.Errors())

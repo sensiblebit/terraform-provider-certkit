@@ -37,7 +37,7 @@ func TestCertificateDataSource(t *testing.T) {
 	}
 	computed := []string{
 		"id", "cert_pem", "chain_pem", "fullchain_pem",
-		"sha256_fingerprint", "skid", "skid_embedded", "akid", "akid_embedded",
+		"sha256_fingerprint", "ski", "ski_embedded", "aki", "aki_embedded",
 		"intermediates", "roots", "warnings",
 	}
 	for _, attr := range slices.Concat(optional, computed) {
@@ -79,16 +79,16 @@ data "certkit_certificate" "test" {
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "chain_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "fullchain_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "sha256_fingerprint"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "skid"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "akid"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "ski"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "aki"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "intermediates.#", "1"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "intermediates.0.cert_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "intermediates.0.sha256_fingerprint"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "intermediates.0.skid"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "intermediates.0.ski"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "roots.#", "1"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.cert_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.sha256_fingerprint"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.skid"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.ski"),
 			),
 		}},
 	})
@@ -262,10 +262,10 @@ data "certkit_certificate" "google" {
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "chain_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "fullchain_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "sha256_fingerprint"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "skid"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "ski"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.google", "intermediates.#", "1"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "intermediates.0.cert_pem"),
-				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "intermediates.0.skid"),
+				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "intermediates.0.ski"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.google", "roots.#", "1"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.google", "roots.0.cert_pem"),
 			),
