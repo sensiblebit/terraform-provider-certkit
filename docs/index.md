@@ -41,8 +41,8 @@ output "fullchain" {
   value = data.certkit_certificate.app.fullchain_pem
 }
 
-output "leaf_skid" {
-  value = data.certkit_certificate.app.skid
+output "leaf_ski" {
+  value = data.certkit_certificate.app.ski
 }
 ```
 

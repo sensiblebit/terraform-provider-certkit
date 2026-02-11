@@ -10,7 +10,7 @@ Working with certificates in Terraform usually means shelling out to OpenSSL, wr
 - **Verify chains against system, Mozilla, or custom trust stores**, including airgapped environments
 - **Generate CSRs** that match an existing certificate's subject and SANs, for zero-downtime renewals
 - **Convert between formats** (PEM, PKCS#12/PFX, PKCS#7/P7B) without leaving Terraform
-- **Inspect anything** by decoding bundles, extracting fingerprints, and comparing SKIDs across mixed chains
+- **Inspect anything** by decoding bundles, extracting fingerprints, and comparing SKIs across mixed chains
 
 Pure Go. No OpenSSL. No shell commands. No external dependencies.
 
@@ -90,11 +90,11 @@ Resolves a certificate chain from a leaf certificate (fetched via TLS or provide
 | `chain_pem` | String | Leaf + intermediates PEM |
 | `fullchain_pem` | String | Leaf + intermediates + root PEM |
 | `sha256_fingerprint` | String | SHA-256 fingerprint of the leaf |
-| `skid` | String | Leaf Subject Key Identifier (RFC 7093, computed) |
-| `skid_embedded` | String | Leaf Subject Key Identifier (from certificate extension) |
-| `akid` | String | Leaf Authority Key Identifier (RFC 7093 SKID of issuer) |
-| `akid_embedded` | String | Leaf Authority Key Identifier (from certificate extension) |
-| `intermediates` | List(Object) | Intermediate certificates with `cert_pem`, `sha256_fingerprint`, `skid`, `skid_embedded`, `akid`, `akid_embedded` |
+| `ski` | String | Leaf Subject Key Identifier (RFC 7093, computed) |
+| `ski_embedded` | String | Leaf Subject Key Identifier (from certificate extension) |
+| `aki` | String | Leaf Authority Key Identifier (RFC 7093 SKI of issuer) |
+| `aki_embedded` | String | Leaf Authority Key Identifier (from certificate extension) |
+| `intermediates` | List(Object) | Intermediate certificates with `cert_pem`, `sha256_fingerprint`, `ski`, `ski_embedded`, `aki`, `aki_embedded` |
 | `roots` | List(Object) | Root certificates with same attributes as intermediates |
 | `warnings` | List(String) | Non-fatal warnings (e.g., AIA fetch failures) |
 
@@ -317,11 +317,11 @@ output "cert_count" {
 
 ## Technical Reference
 
-### SKID Calculation
+### SKI Calculation
 
-The `skid` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING (excluding tag, length, and unused-bits octet). This produces a consistent 20-byte identifier for the same key, regardless of what the issuing CA embeds.
+The `ski` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING (excluding tag, length, and unused-bits octet). This produces a consistent 20-byte identifier for the same key, regardless of what the issuing CA embeds.
 
-The `skid_embedded` attribute returns whatever the CA placed in the Subject Key Identifier extension, which is typically SHA-1 (20 bytes) but may be full SHA-256 (32 bytes) for newer CAs.
+The `ski_embedded` attribute returns whatever the CA placed in the Subject Key Identifier extension, which is typically SHA-1 (20 bytes) but may be full SHA-256 (32 bytes) for newer CAs.
 
 ### Trust Stores
 

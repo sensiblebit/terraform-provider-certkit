@@ -24,12 +24,12 @@ output "leaf_fingerprint" {
 }
 
 # SHA-256 computed (RFC 7093, always consistent across mixed chains)
-output "leaf_skid" {
-  value = data.certkit_certificate.app.skid
+output "leaf_ski" {
+  value = data.certkit_certificate.app.ski
 }
 
-output "leaf_akid" {
-  value = data.certkit_certificate.app.akid
+output "leaf_aki" {
+  value = data.certkit_certificate.app.aki
 }
 
 # Structured intermediate/root data
@@ -41,12 +41,12 @@ output "roots" {
   value = data.certkit_certificate.app.roots
 }
 
-output "intermediate_skid" {
-  value = data.certkit_certificate.app.intermediates[0].skid
+output "intermediate_ski" {
+  value = data.certkit_certificate.app.intermediates[0].ski
 }
 
-output "root_skid" {
-  value = data.certkit_certificate.app.roots[0].skid
+output "root_ski" {
+  value = data.certkit_certificate.app.roots[0].ski
 }
 
 output "warnings" {

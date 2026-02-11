@@ -365,27 +365,27 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	akiForIndex := func(i int) string {
 		if i+1 < len(chain) {
-			return formatHex(certkit.CertSKID(chain[i+1]))
+			return formatHex(certkit.CertSKI(chain[i+1]))
 		}
-		return formatHex(certkit.CertSKID(chain[i])) // self-signed root
+		return formatHex(certkit.CertSKI(chain[i])) // self-signed root
 	}
 
 	// Leaf fingerprints (flat top-level attrs)
 	data.SHA256Fingerprint = types.StringValue(certkit.CertFingerprint(result.Leaf))
-	data.SKI = types.StringValue(formatHex(certkit.CertSKID(result.Leaf)))
-	data.SKIEmbedded = types.StringValue(formatHex(certkit.CertSKIDEmbedded(result.Leaf)))
+	data.SKI = types.StringValue(formatHex(certkit.CertSKI(result.Leaf)))
+	data.SKIEmbedded = types.StringValue(formatHex(certkit.CertSKIEmbedded(result.Leaf)))
 	data.AKI = types.StringValue(akiForIndex(0))
-	data.AKIEmbedded = types.StringValue(formatHex(certkit.CertAKIDEmbedded(result.Leaf)))
+	data.AKIEmbedded = types.StringValue(formatHex(certkit.CertAKIEmbedded(result.Leaf)))
 
 	// Helper to build a cert info object
 	buildCertInfo := func(cert *x509.Certificate, chainIdx int) (types.Object, error) {
 		obj, diags := types.ObjectValue(certInfoAttrTypesNew, map[string]attr.Value{
 			"cert_pem":            types.StringValue(certkit.CertToPEM(cert)),
 			"sha256_fingerprint":  types.StringValue(certkit.CertFingerprint(cert)),
-			"ski":                types.StringValue(formatHex(certkit.CertSKID(cert))),
-			"ski_embedded":       types.StringValue(formatHex(certkit.CertSKIDEmbedded(cert))),
+			"ski":                types.StringValue(formatHex(certkit.CertSKI(cert))),
+			"ski_embedded":       types.StringValue(formatHex(certkit.CertSKIEmbedded(cert))),
 			"aki":                types.StringValue(akiForIndex(chainIdx)),
-			"aki_embedded":       types.StringValue(formatHex(certkit.CertAKIDEmbedded(cert))),
+			"aki_embedded":       types.StringValue(formatHex(certkit.CertAKIEmbedded(cert))),
 		})
 		if diags.HasError() {
 			return types.ObjectNull(certInfoAttrTypesNew), fmt.Errorf("building cert info object: %s", diags.Errors())

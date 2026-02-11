@@ -85,16 +85,16 @@ Exactly one of `url` or `leaf_pem` must be set.
 - `chain_pem` (String) - Concatenated PEM: leaf + intermediates.
 - `fullchain_pem` (String) - Concatenated PEM: leaf + intermediates + root (if `include_root` is `true`).
 - `sha256_fingerprint` (String) - SHA-256 fingerprint of the leaf certificate.
-- `skid` (String) - Leaf Subject Key Identifier (RFC 7093 Method 1: truncated SHA-256 of public key).
-- `skid_embedded` (String) - Leaf Subject Key Identifier from the certificate extension (may be SHA-1 or SHA-256).
-- `akid` (String) - Leaf Authority Key Identifier (RFC 7093 SKID of the issuer).
-- `akid_embedded` (String) - Leaf Authority Key Identifier from the certificate extension.
-- `intermediates` (List of Object) - Intermediate certificates with metadata. Each object contains: `cert_pem`, `sha256_fingerprint`, `skid`, `skid_embedded`, `akid`, `akid_embedded`.
+- `ski` (String) - Leaf Subject Key Identifier (RFC 7093 Method 1: truncated SHA-256 of public key).
+- `ski_embedded` (String) - Leaf Subject Key Identifier from the certificate extension (may be SHA-1 or SHA-256).
+- `aki` (String) - Leaf Authority Key Identifier (RFC 7093 SKI of the issuer).
+- `aki_embedded` (String) - Leaf Authority Key Identifier from the certificate extension.
+- `intermediates` (List of Object) - Intermediate certificates with metadata. Each object contains: `cert_pem`, `sha256_fingerprint`, `ski`, `ski_embedded`, `aki`, `aki_embedded`.
 - `roots` (List of Object) - Root certificates with the same attributes as intermediates.
 - `warnings` (List of String) - Non-fatal warnings (e.g., AIA fetch failures).
 
-## SKID Calculation
+## SKI Calculation
 
-The `skid` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING. This produces a consistent 20-byte identifier for any given key, regardless of what the issuing CA embeds in the certificate extension.
+The `ski` attribute is computed using RFC 7093 Section 2 Method 1: the leftmost 160 bits of the SHA-256 hash of the public key BIT STRING. This produces a consistent 20-byte identifier for any given key, regardless of what the issuing CA embeds in the certificate extension.
 
-The `skid_embedded` attribute returns whatever value the CA placed in the Subject Key Identifier extension, which is typically SHA-1 but may differ.
+The `ski_embedded` attribute returns whatever value the CA placed in the Subject Key Identifier extension, which is typically SHA-1 but may differ.

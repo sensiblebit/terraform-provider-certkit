@@ -28,12 +28,12 @@ output "fullchain" {
   value = data.certkit_certificate.internal.fullchain_pem
 }
 
-output "leaf_skid" {
-  value = data.certkit_certificate.internal.skid
+output "leaf_ski" {
+  value = data.certkit_certificate.internal.ski
 }
 
-output "leaf_akid" {
-  value = data.certkit_certificate.internal.akid
+output "leaf_aki" {
+  value = data.certkit_certificate.internal.aki
 }
 
 output "intermediates" {
