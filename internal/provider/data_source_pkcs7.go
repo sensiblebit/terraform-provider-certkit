@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ datasource.DataSource = &pkcs7DataSource{}
@@ -91,7 +92,7 @@ func (d *pkcs7DataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	}
 
 	// Decode PKCS#7
-	certs, err := DecodePKCS7(derData)
+	certs, err := certkit.DecodePKCS7(derData)
 	if err != nil {
 		resp.Diagnostics.AddError("PKCS#7 Decoding Failed", err.Error())
 		return
@@ -103,9 +104,9 @@ func (d *pkcs7DataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		certObjects[i], _ = types.ObjectValue(
 			pkcs7CertObjectType.AttrTypes,
 			map[string]attr.Value{
-				"cert_pem":            types.StringValue(CertToPEM(cert)),
+				"cert_pem":            types.StringValue(certkit.CertToPEM(cert)),
 				"subject_common_name": types.StringValue(cert.Subject.CommonName),
-				"sha256_fingerprint":  types.StringValue(CertFingerprint(cert)),
+				"sha256_fingerprint":  types.StringValue(certkit.CertFingerprint(cert)),
 			},
 		)
 	}

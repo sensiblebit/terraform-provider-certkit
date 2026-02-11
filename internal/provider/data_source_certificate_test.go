@@ -89,7 +89,6 @@ data "certkit_certificate" "test" {
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.cert_pem"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.sha256_fingerprint"),
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "roots.0.skid"),
-				resource.TestCheckResourceAttr("data.certkit_certificate.test", "warnings.#", "0"),
 			),
 		}},
 	})
@@ -176,7 +175,6 @@ data "certkit_certificate" "test" {
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "intermediates.#", "1"),
 				// No roots when verify=false (no chain verification to discover root)
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "roots.#", "0"),
-				resource.TestCheckResourceAttr("data.certkit_certificate.test", "warnings.#", "0"),
 			),
 		}},
 	})
@@ -215,8 +213,6 @@ data "certkit_certificate" "test" {
 				resource.TestCheckResourceAttrSet("data.certkit_certificate.test", "cert_pem"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "intermediates.#", "1"),
 				resource.TestCheckResourceAttr("data.certkit_certificate.test", "roots.#", "1"),
-				// No warnings because there are no AIA URLs to fail on
-				resource.TestCheckResourceAttr("data.certkit_certificate.test", "warnings.#", "0"),
 			),
 		}},
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ datasource.DataSource = &pkcs12DataSource{}
@@ -96,17 +97,17 @@ func (d *pkcs12DataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	}
 
 	// Decode PKCS#12
-	privateKey, leaf, caCerts, err := DecodePKCS12(pfxData, password)
+	privateKey, leaf, caCerts, err := certkit.DecodePKCS12(pfxData, password)
 	if err != nil {
 		resp.Diagnostics.AddError("PKCS#12 Decoding Failed", err.Error())
 		return
 	}
 
 	// Leaf cert PEM
-	data.CertPEM = types.StringValue(CertToPEM(leaf))
+	data.CertPEM = types.StringValue(certkit.CertToPEM(leaf))
 
 	// Private key PEM (PKCS#8)
-	keyPEM, err := MarshalPrivateKeyToPEM(privateKey)
+	keyPEM, err := certkit.MarshalPrivateKeyToPEM(privateKey)
 	if err != nil {
 		resp.Diagnostics.AddError("Private Key Marshal Failed", err.Error())
 		return
@@ -116,12 +117,12 @@ func (d *pkcs12DataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	// CA certs PEM list
 	caPEMValues := make([]types.String, len(caCerts))
 	for i, ca := range caCerts {
-		caPEMValues[i] = types.StringValue(CertToPEM(ca))
+		caPEMValues[i] = types.StringValue(certkit.CertToPEM(ca))
 	}
 	data.CACertsPEM, _ = types.ListValueFrom(ctx, types.StringType, caPEMValues)
 
 	// Key algorithm
-	data.KeyAlgorithm = types.StringValue(KeyAlgorithmName(privateKey))
+	data.KeyAlgorithm = types.StringValue(certkit.KeyAlgorithmName(privateKey))
 
 	// ID from leaf cert hash
 	idHash := sha256.Sum256(leaf.Raw)

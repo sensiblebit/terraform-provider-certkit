@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ datasource.DataSource = &certRequestDataSource{}
@@ -99,7 +100,7 @@ func (d *certRequestDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	// Parse CSR
-	csr, err := ParsePEMCertificateRequest([]byte(data.CertRequestPEM.ValueString()))
+	csr, err := certkit.ParsePEMCertificateRequest([]byte(data.CertRequestPEM.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid Certificate Request", err.Error())
 		return
@@ -146,7 +147,7 @@ func (d *certRequestDataSource) Read(ctx context.Context, req datasource.ReadReq
 	data.URIs, _ = types.ListValueFrom(ctx, types.StringType, uriValues)
 
 	// Key and signature info
-	data.KeyAlgorithm = types.StringValue(PublicKeyAlgorithmName(csr.PublicKey))
+	data.KeyAlgorithm = types.StringValue(certkit.PublicKeyAlgorithmName(csr.PublicKey))
 	data.SignatureAlgorithm = types.StringValue(csr.SignatureAlgorithm.String())
 
 	// ID from CSR raw bytes hash

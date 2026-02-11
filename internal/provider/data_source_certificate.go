@@ -6,11 +6,13 @@ import (
 	"crypto/x509"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ datasource.DataSource = &certificateDataSource{}
@@ -235,24 +237,26 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	// Build options from inputs
-	opts := DefaultOptions()
+	opts := certkit.DefaultOptions()
 
+	aiaTimeoutMs := 2000
 	if !data.AIATimeoutMs.IsNull() {
-		opts.AIATimeoutMs = int(data.AIATimeoutMs.ValueInt64())
+		aiaTimeoutMs = int(data.AIATimeoutMs.ValueInt64())
 	}
+	opts.AIATimeout = time.Duration(aiaTimeoutMs) * time.Millisecond
 
 	// Obtain leaf certificate
 	var leaf *x509.Certificate
 	if hasURL {
 		var err error
-		leaf, err = FetchLeafFromURL(data.URL.ValueString(), opts.AIATimeoutMs)
+		leaf, err = certkit.FetchLeafFromURL(ctx, data.URL.ValueString(), opts.AIATimeout)
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to Fetch Certificate", err.Error())
 			return
 		}
 	} else {
 		var err error
-		leaf, err = ParsePEMCertificate([]byte(data.LeafPEM.ValueString()))
+		leaf, err = certkit.ParsePEMCertificate([]byte(data.LeafPEM.ValueString()))
 		if err != nil {
 			resp.Diagnostics.AddError("Invalid Leaf Certificate", err.Error())
 			return
@@ -304,7 +308,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 			return
 		}
 		for _, p := range extraPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
+			certs, err := certkit.ParsePEMCertificates([]byte(p))
 			if err != nil {
 				resp.Diagnostics.AddError("Invalid Extra Intermediate", err.Error())
 				return
@@ -321,7 +325,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 			return
 		}
 		for _, p := range rootPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
+			certs, err := certkit.ParsePEMCertificates([]byte(p))
 			if err != nil {
 				resp.Diagnostics.AddError("Invalid Custom Root", err.Error())
 				return
@@ -331,7 +335,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	// Resolve chain
-	result, err := Bundle(leaf, opts)
+	result, err := certkit.Bundle(ctx, leaf, opts)
 	if err != nil {
 		resp.Diagnostics.AddError("Chain Resolution Failed", err.Error())
 		return
@@ -350,7 +354,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	// Build PEM outputs
-	leafPEM := CertToPEM(result.Leaf)
+	leafPEM := certkit.CertToPEM(result.Leaf)
 	data.CertPEM = types.StringValue(leafPEM)
 
 	// Build ordered chain for AKID lookups: [leaf, int0, int1, ..., root]
@@ -361,27 +365,27 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	akidForIndex := func(i int) string {
 		if i+1 < len(chain) {
-			return formatHex(CertSKID(chain[i+1]))
+			return formatHex(certkit.CertSKID(chain[i+1]))
 		}
-		return formatHex(CertSKID(chain[i])) // self-signed root
+		return formatHex(certkit.CertSKID(chain[i])) // self-signed root
 	}
 
 	// Leaf fingerprints (flat top-level attrs)
-	data.SHA256Fingerprint = types.StringValue(CertFingerprint(result.Leaf))
-	data.SKID = types.StringValue(formatHex(CertSKID(result.Leaf)))
-	data.SKIDEmbedded = types.StringValue(formatHex(CertSKIDEmbedded(result.Leaf)))
+	data.SHA256Fingerprint = types.StringValue(certkit.CertFingerprint(result.Leaf))
+	data.SKID = types.StringValue(formatHex(certkit.CertSKID(result.Leaf)))
+	data.SKIDEmbedded = types.StringValue(formatHex(certkit.CertSKIDEmbedded(result.Leaf)))
 	data.AKID = types.StringValue(akidForIndex(0))
-	data.AKIDEmbedded = types.StringValue(formatHex(CertAKIDEmbedded(result.Leaf)))
+	data.AKIDEmbedded = types.StringValue(formatHex(certkit.CertAKIDEmbedded(result.Leaf)))
 
 	// Helper to build a cert info object
 	buildCertInfo := func(cert *x509.Certificate, chainIdx int) (types.Object, error) {
 		obj, diags := types.ObjectValue(certInfoAttrTypesNew, map[string]attr.Value{
-			"cert_pem":            types.StringValue(CertToPEM(cert)),
-			"sha256_fingerprint":  types.StringValue(CertFingerprint(cert)),
-			"skid":                types.StringValue(formatHex(CertSKID(cert))),
-			"skid_embedded":       types.StringValue(formatHex(CertSKIDEmbedded(cert))),
+			"cert_pem":            types.StringValue(certkit.CertToPEM(cert)),
+			"sha256_fingerprint":  types.StringValue(certkit.CertFingerprint(cert)),
+			"skid":                types.StringValue(formatHex(certkit.CertSKID(cert))),
+			"skid_embedded":       types.StringValue(formatHex(certkit.CertSKIDEmbedded(cert))),
 			"akid":                types.StringValue(akidForIndex(chainIdx)),
-			"akid_embedded":       types.StringValue(formatHex(CertAKIDEmbedded(cert))),
+			"akid_embedded":       types.StringValue(formatHex(certkit.CertAKIDEmbedded(cert))),
 		})
 		if diags.HasError() {
 			return types.ObjectNull(certInfoAttrTypesNew), fmt.Errorf("building cert info object: %s", diags.Errors())
@@ -395,7 +399,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 
 	var intermediateObjs []attr.Value
 	for i, cert := range result.Intermediates {
-		chainParts = append(chainParts, CertToPEM(cert))
+		chainParts = append(chainParts, certkit.CertToPEM(cert))
 		obj, err := buildCertInfo(cert, 1+i)
 		if err != nil {
 			resp.Diagnostics.AddError("Internal Error", err.Error())
@@ -429,7 +433,7 @@ func (d *certificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	copy(fullchainParts, chainParts)
 	if opts.IncludeRoot {
 		for _, cert := range result.Roots {
-			fullchainParts = append(fullchainParts, CertToPEM(cert))
+			fullchainParts = append(fullchainParts, certkit.CertToPEM(cert))
 		}
 	}
 	data.FullchainPEM = types.StringValue(strings.Join(fullchainParts, ""))

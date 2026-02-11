@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ resource.Resource = &pkcs7Resource{}
@@ -82,7 +83,7 @@ func (r *pkcs7Resource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	// Parse primary cert
 	if !data.CertPEM.IsNull() && data.CertPEM.ValueString() != "" {
-		cert, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
+		cert, err := certkit.ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
 		if err != nil {
 			resp.Diagnostics.AddError("Invalid Certificate", err.Error())
 			return
@@ -98,7 +99,7 @@ func (r *pkcs7Resource) Create(ctx context.Context, req resource.CreateRequest, 
 			return
 		}
 		for _, p := range caPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
+			certs, err := certkit.ParsePEMCertificates([]byte(p))
 			if err != nil {
 				resp.Diagnostics.AddError("Invalid CA Certificate", err.Error())
 				return
@@ -117,7 +118,7 @@ func (r *pkcs7Resource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	// Encode PKCS#7
-	p7bData, err := EncodePKCS7(allCerts)
+	p7bData, err := certkit.EncodePKCS7(allCerts)
 	if err != nil {
 		resp.Diagnostics.AddError("PKCS#7 Encoding Failed", err.Error())
 		return

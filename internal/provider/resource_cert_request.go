@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ resource.Resource = &certRequestResource{}
@@ -81,7 +82,7 @@ func (r *certRequestResource) Create(ctx context.Context, req resource.CreateReq
 	}
 
 	// Parse leaf certificate
-	leaf, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
+	leaf, err := certkit.ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid Certificate", err.Error())
 		return
@@ -90,7 +91,7 @@ func (r *certRequestResource) Create(ctx context.Context, req resource.CreateReq
 	// Parse or auto-generate private key
 	var parsedKey crypto.PrivateKey
 	if !data.PrivateKeyPEM.IsNull() && !data.PrivateKeyPEM.IsUnknown() && data.PrivateKeyPEM.ValueString() != "" {
-		parsedKey, err = ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
+		parsedKey, err = certkit.ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
 		if err != nil {
 			resp.Diagnostics.AddError("Invalid Private Key", err.Error())
 			return
@@ -98,7 +99,7 @@ func (r *certRequestResource) Create(ctx context.Context, req resource.CreateReq
 	}
 
 	// Generate CSR (nil key => auto-generate EC P-256)
-	csrPEM, keyPEM, err := GenerateCSR(leaf, parsedKey)
+	csrPEM, keyPEM, err := certkit.GenerateCSR(leaf, parsedKey)
 	if err != nil {
 		resp.Diagnostics.AddError("CSR Generation Failed", err.Error())
 		return
@@ -116,9 +117,9 @@ func (r *certRequestResource) Create(ctx context.Context, req resource.CreateReq
 	if parsedKey != nil {
 		signerKey = parsedKey
 	} else {
-		signerKey, _ = ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
+		signerKey, _ = certkit.ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
 	}
-	data.KeyAlgorithm = types.StringValue(KeyAlgorithmName(signerKey))
+	data.KeyAlgorithm = types.StringValue(certkit.KeyAlgorithmName(signerKey))
 
 	// ID from leaf cert hash
 	idHash := sha256.Sum256(leaf.Raw)

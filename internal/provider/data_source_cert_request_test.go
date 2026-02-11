@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/sensiblebit/certkit"
 )
 
 func TestCertRequestDataSource(t *testing.T) {
@@ -92,7 +93,7 @@ data "certkit_cert_request" "inspect" {
 func TestAccCertRequestDataSource_withSANs(t *testing.T) {
 	leaf, key := generateLeafWithSANs(t)
 
-	csrPEM, _, err := GenerateCSR(leaf, key)
+	csrPEM, _, err := certkit.GenerateCSR(leaf, key)
 	if err != nil {
 		t.Fatal(err)
 	}

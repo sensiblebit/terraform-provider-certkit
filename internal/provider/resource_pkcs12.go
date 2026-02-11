@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/sensiblebit/certkit"
 )
 
 var _ resource.Resource = &pkcs12Resource{}
@@ -98,14 +99,14 @@ func (r *pkcs12Resource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	// Parse leaf certificate
-	leaf, err := ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
+	leaf, err := certkit.ParsePEMCertificate([]byte(data.CertPEM.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid Certificate", err.Error())
 		return
 	}
 
 	// Parse private key
-	parsedKey, err := ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
+	parsedKey, err := certkit.ParsePEMPrivateKey([]byte(data.PrivateKeyPEM.ValueString()))
 	if err != nil {
 		resp.Diagnostics.AddError("Invalid Private Key", err.Error())
 		return
@@ -120,7 +121,7 @@ func (r *pkcs12Resource) Create(ctx context.Context, req resource.CreateRequest,
 			return
 		}
 		for _, p := range caPEMs {
-			certs, err := ParsePEMCertificates([]byte(p))
+			certs, err := certkit.ParsePEMCertificates([]byte(p))
 			if err != nil {
 				resp.Diagnostics.AddError("Invalid CA Certificate", err.Error())
 				return
@@ -136,7 +137,7 @@ func (r *pkcs12Resource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	// Encode PKCS#12
-	pfxData, err := EncodePKCS12(parsedKey, leaf, caCerts, password)
+	pfxData, err := certkit.EncodePKCS12(parsedKey, leaf, caCerts, password)
 	if err != nil {
 		resp.Diagnostics.AddError("PKCS#12 Encoding Failed", err.Error())
 		return
