@@ -6,7 +6,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
 	github.com/hashicorp/terraform-plugin-go v0.29.0
 	github.com/hashicorp/terraform-plugin-testing v1.14.0
-	github.com/sensiblebit/certkit v0.0.0-00010101000000-000000000000
+	github.com/sensiblebit/certkit v0.2.0
 )
 
 require (
@@ -65,5 +65,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.0 // indirect
 )
-
-replace github.com/sensiblebit/certkit => ../certkit
